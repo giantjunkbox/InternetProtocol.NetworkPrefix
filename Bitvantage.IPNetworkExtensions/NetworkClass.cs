@@ -1,5 +1,5 @@
 /*
-   Bitvantage.InternetProtocol.NetworkPrefix
+   Bitvantage.IPNetworkExtensions
    Copyright (C) 2024 Michael Crino
    
    This program is free software: you can redistribute it and/or modify
@@ -19,22 +19,37 @@
 namespace Bitvantage.InternetProtocol;
 
 /// <summary>
-///     A version of the Internet Protocol.
+///     The historical classes of the IPv4 address space, from before classless inter-domain routing.
 /// </summary>
-public enum IPVersion
+public enum NetworkClass
 {
     /// <summary>
-    ///     No version. A network always has a version other than this.
+    ///     The network is an IPv6 network, or spans more than one class.
     /// </summary>
     Undefined = 0,
 
     /// <summary>
-    ///     Internet Protocol version 4, with 32 bit addresses.
+    ///     Class A, <c>0.0.0.0/1</c>.
     /// </summary>
-    IPv4 = 1,
+    A = 1,
 
     /// <summary>
-    ///     Internet Protocol version 6, with 128 bit addresses.
+    ///     Class B, <c>128.0.0.0/2</c>.
     /// </summary>
-    IPv6 = 2
+    B = 2,
+
+    /// <summary>
+    ///     Class C, <c>192.0.0.0/3</c>.
+    /// </summary>
+    C = 3,
+
+    /// <summary>
+    ///     Class D, <c>224.0.0.0/4</c>, which is used for multicast.
+    /// </summary>
+    D = 4,
+
+    /// <summary>
+    ///     Class E, <c>240.0.0.0/4</c>, which is reserved.
+    /// </summary>
+    E = 5
 }

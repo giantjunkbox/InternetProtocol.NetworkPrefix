@@ -24,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Bitvantage.InternetProtocol.NetworkPrefix\Bitvantage.InternetProtocol.NetworkPrefix.csproj" />
+    <ProjectReference Include="..\Bitvantage.IPNetworkExtensions\Bitvantage.IPNetworkExtensions.csproj" />
   </ItemGroup>
 
   <ItemGroup>

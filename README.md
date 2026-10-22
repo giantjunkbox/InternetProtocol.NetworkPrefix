@@ -1,16 +1,17 @@
-# Bitvantage.InternetProtocol.NetworkPrefix
-Network arithmetic for .NET's built-in `System.Net.IPNetwork`.
+# Bitvantage.IPNetworkExtensions
+CIDR, subnet and supernet math for .NET's built-in `System.Net.IPNetwork`.
 
 `IPNetwork` can parse a network and test whether an address is in it. This library adds the rest as C# 14 extension
 members: masks, host ranges, subnet and supernet tests, splitting, supernets, exclusion, summarization, sorting,
 classification, strict parsing and JSON serialization. The members appear on `IPNetwork` itself, so there is no
 separate type to convert to and from.
 
-Requires .NET 10 or later.
+Requires .NET 10 or later. This package replaces `Bitvantage.InternetProtocol.NetworkPrefix`; see the changelog for the
+migration from its `NetworkPrefix` class.
 
 ## Installing via NuGet Package Manager
 ```sh
-PM> NuGet\Install-Package Bitvantage.InternetProtocol.NetworkPrefix
+PM> NuGet\Install-Package Bitvantage.IPNetworkExtensions
 ```
 
 ## Quick Start

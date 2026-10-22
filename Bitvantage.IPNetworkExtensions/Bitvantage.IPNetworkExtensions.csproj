@@ -8,7 +8,7 @@
 
 		<AssemblyName>$(MSBuildProjectName)</AssemblyName>
 		<RootNamespace>Bitvantage.InternetProtocol</RootNamespace>
-		<Title>Bitvantage.InternetProtocol.NetworkPrefix</Title>
+		<Title>IPNetwork Extensions: CIDR and subnet math for System.Net.IPNetwork</Title>
 		<PackageProjectUrl>https://github.com/Bitvantage/InternetProtocol.NetworkPrefix</PackageProjectUrl>
 		<PackageIcon>icon.png</PackageIcon>
 		<RepositoryType>git</RepositoryType>

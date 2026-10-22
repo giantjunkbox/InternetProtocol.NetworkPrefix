@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.0.0] - Unreleased
 
+The package is renamed from `Bitvantage.InternetProtocol.NetworkPrefix` to `Bitvantage.IPNetworkExtensions`, so that
+its name says what it does and matches searches for `IPNetwork`. The version continues from the last release under the
+old name, 2.0.0, and the namespace, `Bitvantage.InternetProtocol`, is unchanged.
+
 This release replaces the `NetworkPrefix` class with extension members on .NET's built-in `System.Net.IPNetwork`, moves
 the library to .NET 10, and fixes a number of defects. `IPNetwork` already holds a network address and a prefix length,
 and it is the type that .NET and other libraries accept, so a second type for the same thing only added conversions.
@@ -116,6 +120,7 @@ notes.
 
 ### Migration
 
+- Replace the `Bitvantage.InternetProtocol.NetworkPrefix` package reference with `Bitvantage.IPNetworkExtensions`.
 - Apply the mappings in the table above, and import the `Bitvantage.InternetProtocol` namespace wherever the members
   are used.
 - Parse untrusted text with `IPNetwork.ParseStrict` rather than `IPNetwork.Parse`, and write IPv4 addresses in the
