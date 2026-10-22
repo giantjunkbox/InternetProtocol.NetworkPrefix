@@ -131,7 +131,8 @@ public sealed partial class NetworkPrefix : IEquatable<NetworkPrefix>, IComparab
     ///     The last address in the network, in which every host bit is set. For example, <c>10.0.0.255</c> for <c>10.0.0.0/24</c>.
     /// </summary>
     /// <remarks>
-    ///     IPv6 has no broadcast, so for an IPv6 prefix this is simply the last address; it is the same as <see cref="LastAddress" />.
+    ///     IPv6 has no broadcast address. For an IPv6 prefix this is simply the last address, the same as <see cref="LastAddress" />,
+    ///     and it can be assigned to a host.
     /// </remarks>
     public IPAddress BroadcastAddress => LastAddress;
 
@@ -158,8 +159,9 @@ public sealed partial class NetworkPrefix : IEquatable<NetworkPrefix>, IComparab
     ///     The first address in the network that can be assigned to a host.
     /// </summary>
     /// <remarks>
-    ///     This is the address after the network address, except for a /31 or /127 point-to-point prefix (RFC 3021 and RFC 6164),
-    ///     where both addresses are usable, and for a host prefix, which holds just one address.
+    ///     This is the address after the network address. For IPv4 the network address identifies the network, and for IPv6 it
+    ///     is the subnet-router anycast address (RFC 4291). The exceptions are a /31 or /127 point-to-point prefix (RFC 3021 and
+    ///     RFC 6164), where both addresses are usable, and a host prefix, which holds just one address.
     /// </remarks>
     public IPAddress FirstHost => ToIPAddress(FirstHostBits);
 
@@ -196,8 +198,8 @@ public sealed partial class NetworkPrefix : IEquatable<NetworkPrefix>, IComparab
     ///     The last address in the network that can be assigned to a host.
     /// </summary>
     /// <remarks>
-    ///     This is the address before the broadcast address, except for a /31 or /127 point-to-point prefix (RFC 3021 and
-    ///     RFC 6164), where both addresses are usable, and for a host prefix, which holds just one address.
+    ///     For IPv4 this is the address before the broadcast address, except for a /31 point-to-point prefix (RFC 3021), where
+    ///     both addresses are usable, and a /32 host prefix. IPv6 has no broadcast address, so for IPv6 this is the last address.
     /// </remarks>
     public IPAddress LastHost => ToIPAddress(LastHostBits);
 
@@ -237,9 +239,14 @@ public sealed partial class NetworkPrefix : IEquatable<NetworkPrefix>, IComparab
     public BigInteger TotalAddresses => (BigInteger)HostMaskBits + BigInteger.One;
 
     /// <summary>
-    ///     The number of addresses in the network that can be assigned to a host. This excludes the network and broadcast
-    ///     addresses, except for /31, /127 and host prefixes, where every address is usable.
+    ///     The number of addresses in the network that can be assigned to a host, from <see cref="FirstHost" /> to
+    ///     <see cref="LastHost" />.
     /// </summary>
+    /// <remarks>
+    ///     For IPv4 this excludes the network and broadcast addresses. For IPv6 it excludes only the subnet-router anycast
+    ///     address, since IPv6 has no broadcast address. A /31 or /127 point-to-point prefix and a host prefix have no excluded
+    ///     addresses.
+    /// </remarks>
     public UInt128 TotalHosts
     {
         get
@@ -250,7 +257,10 @@ public sealed partial class NetworkPrefix : IEquatable<NetworkPrefix>, IComparab
                 0 => UInt128.One,
                 1 => 2,
 
-                // every address, which is the host mask plus one, less the network and broadcast addresses
+                // every address, which is the host mask plus one, less the subnet-router anycast address
+                _ when Version == IPVersion.IPv6 => HostMaskBits,
+
+                // every address less the network and broadcast addresses
                 _ => HostMaskBits - UInt128.One
             };
         }
@@ -274,7 +284,10 @@ public sealed partial class NetworkPrefix : IEquatable<NetworkPrefix>, IComparab
     /// <summary>
     ///     The last host address in integer form. See <see cref="LastHost" />.
     /// </summary>
-    private UInt128 LastHostBits => HostBitLength <= 1 ? LastAddressBits : LastAddressBits - UInt128.One;
+    /// <remarks>
+    ///     Only an IPv4 network of more than two addresses has a broadcast address to leave out.
+    /// </remarks>
+    private UInt128 LastHostBits => HostBitLength <= 1 || Version == IPVersion.IPv6 ? LastAddressBits : LastAddressBits - UInt128.One;
 
     /// <summary>
     ///     Compares this prefix with another object. See <see cref="CompareTo(NetworkPrefix)" />.

@@ -38,7 +38,7 @@ public sealed partial class NetworkPrefix : ISpanParsable<NetworkPrefix>
     /// <summary>
     ///     A description of the supported formats, for exception messages.
     /// </summary>
-    private const string SupportedFormats = "The supported formats are an address and prefix length such as 10.0.0.0/24, an address and network mask such as 10.0.0.0 255.255.255.0 or 10.0.0.0/255.255.255.0, and a single address such as 10.0.0.1, which is a host prefix.";
+    private const string SupportedFormats = "The supported formats are an address and prefix length such as 10.0.0.0/24, an address and network mask such as 10.0.0.0 255.255.255.0 or 10.0.0.0/255.255.255.0, and a single address such as 10.0.0.1, which is a host prefix. An IPv4 address must be four decimal numbers separated by dots, without leading zeros.";
 
     /// <summary>
     ///     Parses the text of a prefix.
@@ -54,6 +54,12 @@ public sealed partial class NetworkPrefix : ISpanParsable<NetworkPrefix>
     ///         Leading and trailing whitespace is ignored, and any host bits that are set in the address are cleared. Host names
     ///         are not accepted, because looking them up is a network operation; use <see cref="Resolve" /> or
     ///         <see cref="ResolveAsync" /> for those.
+    ///     </para>
+    ///     <para>
+    ///         An IPv4 address or mask must be in the standard form of four decimal numbers separated by dots, without leading
+    ///         zeros. <see cref="IPAddress.Parse(string)" /> and <see cref="IPNetwork.Parse(string)" /> also accept older forms,
+    ///         and read a number with a leading zero as octal, so that <c>010.0.0.0/8</c> is <c>8.0.0.0/8</c>. Those forms are
+    ///         rejected here, because they are rarely intended and are a known source of security bugs.
     ///     </para>
     /// </remarks>
     /// <param name="value">The text to parse.</param>
@@ -170,7 +176,7 @@ public sealed partial class NetworkPrefix : ISpanParsable<NetworkPrefix>
         if (!TrySplitAddressAndSuffix(value, out var addressText, out var suffixText))
             return false;
 
-        if (!IPAddress.TryParse(addressText, out var address) || !AddressBits.TryGetVersion(address.AddressFamily, out var version))
+        if (!TryParseAddress(addressText, out var address, out var version))
             return false;
 
         if (!TryParseSuffix(suffixText, version, out var prefixLength))
@@ -240,6 +246,37 @@ public sealed partial class NetworkPrefix : ISpanParsable<NetworkPrefix>
     }
 
     /// <summary>
+    ///     Determines whether IPv4 address text is in the standard dotted-decimal form: four decimal numbers separated by dots,
+    ///     without leading zeros.
+    /// </summary>
+    /// <remarks>
+    ///     <see cref="IPAddress" /> also accepts shorthand such as <c>10.1</c> for <c>10.0.0.1</c>, a whole number such as
+    ///     <c>167772161</c>, hexadecimal such as <c>0x0a.0.0.1</c>, and reads a number with a leading zero as octal, so that
+    ///     <c>010.0.0.1</c> is <c>8.0.0.1</c>. This check rejects all of those. <see cref="IPAddress" /> still checks that each
+    ///     number is no more than 255.
+    /// </remarks>
+    /// <param name="addressText">The text of an address that <see cref="IPAddress" /> has parsed as IPv4.</param>
+    /// <returns><see langword="true" /> when the text is in the standard form.</returns>
+    private static bool IsDottedDecimal(ReadOnlySpan<char> addressText)
+    {
+        var numberCount = 0;
+        foreach (var numberRange in addressText.Split('.'))
+        {
+            var numberText = addressText[numberRange];
+            numberCount++;
+
+            // each number is one to three digits, and only a lone zero may start with a zero
+            if (numberText.IsEmpty || numberText.Length > 3 || numberText.ContainsAnyExcept(Digits))
+                return false;
+
+            if (numberText.Length > 1 && numberText[0] == '0')
+                return false;
+        }
+
+        return numberCount == 4;
+    }
+
+    /// <summary>
     ///     Determines whether text is a prefix length, which is made only of digits.
     /// </summary>
     /// <param name="suffixText">The text after the separator.</param>
@@ -274,7 +311,33 @@ public sealed partial class NetworkPrefix : ISpanParsable<NetworkPrefix>
 
         // anything else must be a network mask of the same IP version as the address
         prefixLength = 0;
-        return IPAddress.TryParse(suffixText, out var networkMask) && TryGetPrefixLength(networkMask, version, out prefixLength);
+        return TryParseAddress(suffixText, out var networkMask, out _) && TryGetPrefixLength(networkMask, version, out prefixLength);
+    }
+
+    /// <summary>
+    ///     Parses the text of an IPv4 or IPv6 address, accepting only the standard dotted-decimal form for IPv4.
+    /// </summary>
+    /// <param name="addressText">The text of the address.</param>
+    /// <param name="address">When this method returns <see langword="true" />, the address.</param>
+    /// <param name="version">When this method returns <see langword="true" />, the IP version of the address.</param>
+    /// <returns><see langword="true" /> when the text is a valid address.</returns>
+    private static bool TryParseAddress(ReadOnlySpan<char> addressText, [NotNullWhen(true)] out IPAddress? address, out IPVersion version)
+    {
+        if (!IPAddress.TryParse(addressText, out address) || !AddressBits.TryGetVersion(address.AddressFamily, out version))
+        {
+            address = null;
+            version = IPVersion.Undefined;
+            return false;
+        }
+
+        // an IPv4 address embedded in IPv6 text, such as ::ffff:10.0.0.1, is parsed by the stricter IPv6 rules and is not checked here
+        if (version == IPVersion.IPv4 && !IsDottedDecimal(addressText))
+        {
+            address = null;
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -306,7 +369,9 @@ public sealed partial class NetworkPrefix : ISpanParsable<NetworkPrefix>
         if (!TrySplitAddressAndSuffix(value, out var hostText, out var suffixText) || hostText.IsEmpty)
             throw new FormatException($"'{value}' is not a valid network prefix or host name.");
 
-        // an address with an invalid suffix, such as 10.0.0.0/33, is malformed, and is not a host name to look up
+        // text that IPAddress reads as an address, in any of its forms, is a malformed prefix rather than a host name to look
+        // up. That covers an invalid suffix, as in 10.0.0.0/33, and an address in a rejected form, as in 010.0.0.0/8, which a
+        // resolver would otherwise read as an address in its own way
         if (IPAddress.TryParse(hostText, out _))
             throw new FormatException($"'{value}' is not a valid network prefix. {SupportedFormats}");
 

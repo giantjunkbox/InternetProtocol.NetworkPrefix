@@ -185,6 +185,7 @@ public sealed partial class NetworkPrefix
 
     /// <summary>
     ///     Enumerates every address in the network that can be assigned to a host, from <see cref="FirstHost" /> to <see cref="LastHost" />.
+    ///     For IPv4 this leaves out the network and broadcast addresses, and for IPv6 it leaves out the subnet-router anycast address.
     /// </summary>
     /// <remarks>
     ///     The addresses are produced as they are enumerated, so this works for networks of any size, but enumerating a large IPv6

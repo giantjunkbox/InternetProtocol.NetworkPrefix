@@ -154,6 +154,9 @@ public class IPNetworkExtensionsTests
         Assert.That(JsonSerializer.Deserialize<Dictionary<IPNetwork, string>>(json, options), Is.EqualTo(namesByNetwork));
         Assert.That(JsonSerializer.Deserialize<IPNetwork>("\"10.0.0.0 255.0.0.0\"", options), Is.EqualTo(IPNetwork.Parse("10.0.0.0/8")));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<IPNetwork>("\"10.0.0.0/33\"", options));
+
+        // the octal reading of a leading zero that IPNetwork.Parse would apply is rejected
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<IPNetwork>("\"010.0.0.0/8\"", options));
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<IPNetwork>("42", options));
     }
 
@@ -186,6 +189,7 @@ public class IPNetworkExtensionsTests
         Assert.That(network.FirstHost, Is.EqualTo(IPAddress.Parse("2001:db8::")));
         Assert.That(network.LastHost, Is.EqualTo(IPAddress.Parse("2001:db8::1")));
         Assert.That(IPNetwork.Parse("2001:db8::1/128").IsHostPrefix, Is.True);
+        Assert.That(IPNetwork.Parse("2001:db8::/64").LastHost, Is.EqualTo(IPAddress.Parse("2001:db8::ffff:ffff:ffff:ffff")));
     }
 
     [Test]

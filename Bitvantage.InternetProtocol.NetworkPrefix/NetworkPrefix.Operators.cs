@@ -16,7 +16,6 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-using System.Diagnostics.CodeAnalysis;
 using System.Net;
 
 namespace Bitvantage.InternetProtocol;
@@ -78,26 +77,18 @@ public sealed partial class NetworkPrefix
     }
 
     /// <summary>
-    ///     Converts a string to a prefix with <see cref="Parse(string)" />.
+    ///     Converts a string to a prefix with <see cref="Parse(string)" />, as in <c>(NetworkPrefix)"10.0.0.0/24"</c>.
     /// </summary>
+    /// <remarks>
+    ///     The conversion is explicit because it throws for text that is not a valid prefix.
+    /// </remarks>
     /// <param name="value">The text of a prefix, such as <c>10.0.0.0/24</c>.</param>
     /// <returns>The parsed prefix.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value" /> is <see langword="null" />.</exception>
     /// <exception cref="FormatException">Thrown when <paramref name="value" /> is not a valid prefix.</exception>
-    public static implicit operator NetworkPrefix(string value)
+    public static explicit operator NetworkPrefix(string value)
     {
         return Parse(value);
-    }
-
-    /// <summary>
-    ///     Converts a prefix to its CIDR notation, such as <c>10.0.0.0/24</c>.
-    /// </summary>
-    /// <param name="value">The prefix.</param>
-    /// <returns>The text of the prefix, or <see langword="null" /> when <paramref name="value" /> is <see langword="null" />.</returns>
-    [return: NotNullIfNotNull(nameof(value))]
-    public static implicit operator string?(NetworkPrefix? value)
-    {
-        return value?.ToString();
     }
 
     /// <summary>

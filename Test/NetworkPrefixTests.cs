@@ -695,10 +695,11 @@ public class NetworkPrefixTests
     [Test]
     public void FirstAndLastHost_IPv6_01()
     {
+        // IPv6 has no broadcast address, so only the subnet-router anycast address, the network address, is not a host
         var network = NetworkPrefix.Parse("2001:db8::/64");
 
         Assert.That(network.FirstHost, Is.EqualTo(IPAddress.Parse("2001:db8::1")));
-        Assert.That(network.LastHost, Is.EqualTo(IPAddress.Parse("2001:db8::ffff:ffff:ffff:fffe")));
+        Assert.That(network.LastHost, Is.EqualTo(IPAddress.Parse("2001:db8::ffff:ffff:ffff:ffff")));
         Assert.That(network.LastAddress, Is.EqualTo(IPAddress.Parse("2001:db8::ffff:ffff:ffff:ffff")));
     }
 
@@ -720,49 +721,49 @@ public class NetworkPrefixTests
     [Test]
     public void GetContainingNetwork_IPv4_01()
     {
-        Assert.That(NetworkPrefix.GetContainingNetwork("10.0.0.0/24", "10.0.1.0/24"), Is.EqualTo((NetworkPrefix)"10.0.0.0/23"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("10.0.0.0/24"), NetworkPrefix.Parse("10.0.1.0/24")), Is.EqualTo((NetworkPrefix)"10.0.0.0/23"));
     }
 
     [Test]
     public void GetContainingNetwork_IPv4_02()
     {
-        Assert.That(NetworkPrefix.GetContainingNetwork("200.0.0.0/24", "10.0.1.0/24"), Is.EqualTo((NetworkPrefix)"0.0.0.0/0"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("200.0.0.0/24"), NetworkPrefix.Parse("10.0.1.0/24")), Is.EqualTo((NetworkPrefix)"0.0.0.0/0"));
     }
 
     [Test]
     public void GetContainingNetwork_IPv4_03()
     {
-        Assert.That(NetworkPrefix.GetContainingNetwork("10.0.1.0/24", "10.0.1.0/24"), Is.EqualTo((NetworkPrefix)"10.0.1.0/24"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("10.0.1.0/24"), NetworkPrefix.Parse("10.0.1.0/24")), Is.EqualTo((NetworkPrefix)"10.0.1.0/24"));
     }
 
     [Test]
     public void GetContainingNetwork_IPv4_04()
     {
-        Assert.That(NetworkPrefix.GetContainingNetwork("10.0.1.0/24", "10.0.1.0/23"), Is.EqualTo((NetworkPrefix)"10.0.1.0/23"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("10.0.1.0/24"), NetworkPrefix.Parse("10.0.1.0/23")), Is.EqualTo((NetworkPrefix)"10.0.1.0/23"));
     }
 
     [Test]
     public void GetContainingNetwork_IPv4_05()
     {
-        Assert.That(NetworkPrefix.GetContainingNetwork("10.0.1.0/32", "0.0.0.0/0"), Is.EqualTo((NetworkPrefix)"0.0.0.0/0"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("10.0.1.0/32"), NetworkPrefix.Parse("0.0.0.0/0")), Is.EqualTo((NetworkPrefix)"0.0.0.0/0"));
     }
 
     [Test]
     public void GetContainingNetwork_IPv4_06()
     {
-        Assert.That(NetworkPrefix.GetContainingNetwork("0.0.0.0/1", "0.0.0.0/2"), Is.EqualTo((NetworkPrefix)"0.0.0.0/1"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("0.0.0.0/1"), NetworkPrefix.Parse("0.0.0.0/2")), Is.EqualTo((NetworkPrefix)"0.0.0.0/1"));
     }
 
     [Test]
     public void GetContainingNetwork_IPv4_07()
     {
-        Assert.That(NetworkPrefix.GetContainingNetwork("0.0.0.0/2", "255.255.255.0/24"), Is.EqualTo((NetworkPrefix)"0.0.0.0/0"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("0.0.0.0/2"), NetworkPrefix.Parse("255.255.255.0/24")), Is.EqualTo((NetworkPrefix)"0.0.0.0/0"));
     }
 
     [Test]
     public void GetContainingNetwork_IPv4_08()
     {
-        Assert.That(NetworkPrefix.GetContainingNetwork(new NetworkPrefix[] { "1.0.0.0/8", "2.0.0.0/8", "3.0.0.0/8" }), Is.EqualTo((NetworkPrefix)"0.0.0.0/6"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(Prefixes("1.0.0.0/8", "2.0.0.0/8", "3.0.0.0/8")), Is.EqualTo((NetworkPrefix)"0.0.0.0/6"));
     }
 
     [Test]
@@ -770,11 +771,11 @@ public class NetworkPrefixTests
     {
         var networks = new NetworkPrefix[]
         {
-            "10.0.0.0/24",
-            "10.0.1.0/24",
-            "10.0.2.0/24",
-            "10.0.3.0/24",
-            "254.0.0.0/24"
+            NetworkPrefix.Parse("10.0.0.0/24"),
+            NetworkPrefix.Parse("10.0.1.0/24"),
+            NetworkPrefix.Parse("10.0.2.0/24"),
+            NetworkPrefix.Parse("10.0.3.0/24"),
+            NetworkPrefix.Parse("254.0.0.0/24")
         };
 
         var containingNetwork = NetworkPrefix.GetContainingNetwork(networks);
@@ -787,10 +788,10 @@ public class NetworkPrefixTests
     {
         var networks = new NetworkPrefix[]
         {
-            "10.0.0.0/24",
-            "10.0.1.0/24",
-            "10.0.2.0/24",
-            "10.0.3.0/24"
+            NetworkPrefix.Parse("10.0.0.0/24"),
+            NetworkPrefix.Parse("10.0.1.0/24"),
+            NetworkPrefix.Parse("10.0.2.0/24"),
+            NetworkPrefix.Parse("10.0.3.0/24")
         };
 
         var containingNetwork = NetworkPrefix.GetContainingNetwork(networks);
@@ -803,11 +804,11 @@ public class NetworkPrefixTests
     {
         var networks = new NetworkPrefix[]
         {
-            "10.0.0.0/24",
-            "10.0.1.0/24",
-            "10.0.2.0/24",
-            "10.0.3.0/24",
-            "127.255.255.0/24"
+            NetworkPrefix.Parse("10.0.0.0/24"),
+            NetworkPrefix.Parse("10.0.1.0/24"),
+            NetworkPrefix.Parse("10.0.2.0/24"),
+            NetworkPrefix.Parse("10.0.3.0/24"),
+            NetworkPrefix.Parse("127.255.255.0/24")
         };
 
         var containingNetwork = NetworkPrefix.GetContainingNetwork(networks);
@@ -820,10 +821,10 @@ public class NetworkPrefixTests
     {
         // when one network contains the other, the containing network is the less specific of the two,
         // even when the two do not share the same network address
-        Assert.That(NetworkPrefix.GetContainingNetwork("10.20.0.0/16", "10.20.30.0/24"), Is.EqualTo((NetworkPrefix)"10.20.0.0/16"));
-        Assert.That(NetworkPrefix.GetContainingNetwork("10.20.30.0/24", "10.20.0.0/16"), Is.EqualTo((NetworkPrefix)"10.20.0.0/16"));
-        Assert.That(NetworkPrefix.GetContainingNetwork("0.0.0.0/1", "10.20.30.0/24"), Is.EqualTo((NetworkPrefix)"0.0.0.0/1"));
-        Assert.That(NetworkPrefix.GetContainingNetwork("10.20.30.0/24", "10.20.30.40/32"), Is.EqualTo((NetworkPrefix)"10.20.30.0/24"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("10.20.0.0/16"), NetworkPrefix.Parse("10.20.30.0/24")), Is.EqualTo((NetworkPrefix)"10.20.0.0/16"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("10.20.30.0/24"), NetworkPrefix.Parse("10.20.0.0/16")), Is.EqualTo((NetworkPrefix)"10.20.0.0/16"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("0.0.0.0/1"), NetworkPrefix.Parse("10.20.30.0/24")), Is.EqualTo((NetworkPrefix)"0.0.0.0/1"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("10.20.30.0/24"), NetworkPrefix.Parse("10.20.30.40/32")), Is.EqualTo((NetworkPrefix)"10.20.30.0/24"));
     }
 
     [Test]
@@ -832,30 +833,30 @@ public class NetworkPrefixTests
         // the instance method gives the same answer as the static method
         var network = NetworkPrefix.Parse("10.0.0.0/24");
 
-        Assert.That(network.GetContainingNetwork("10.0.3.0/24"), Is.EqualTo(NetworkPrefix.Parse("10.0.0.0/22")));
+        Assert.That(network.GetContainingNetwork(NetworkPrefix.Parse("10.0.3.0/24")), Is.EqualTo(NetworkPrefix.Parse("10.0.0.0/22")));
     }
 
     [Test]
     public void GetContainingNetwork_IPv4_14()
     {
-        Assert.Throws<ArgumentException>(() => NetworkPrefix.GetContainingNetwork("10.0.0.0/8", "2001:db8::/32"));
+        Assert.Throws<ArgumentException>(() => NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("10.0.0.0/8"), NetworkPrefix.Parse("2001:db8::/32")));
         Assert.Throws<ArgumentException>(() => NetworkPrefix.GetContainingNetwork(Array.Empty<NetworkPrefix>()));
-        Assert.Throws<ArgumentNullException>(() => NetworkPrefix.GetContainingNetwork(new NetworkPrefix[] { "10.0.0.0/8", null! }));
+        Assert.Throws<ArgumentNullException>(() => NetworkPrefix.GetContainingNetwork(new NetworkPrefix[] { NetworkPrefix.Parse("10.0.0.0/8"), null! }));
     }
 
     [Test]
     public void GetContainingNetwork_IPv6_01()
     {
-        Assert.That(NetworkPrefix.GetContainingNetwork("2001:db8::/32", "2001:db8:1::/48"), Is.EqualTo((NetworkPrefix)"2001:db8::/32"));
-        Assert.That(NetworkPrefix.GetContainingNetwork("2001:db8::/48", "2001:db8:1::/48"), Is.EqualTo((NetworkPrefix)"2001:db8::/47"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("2001:db8::/32"), NetworkPrefix.Parse("2001:db8:1::/48")), Is.EqualTo((NetworkPrefix)"2001:db8::/32"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("2001:db8::/48"), NetworkPrefix.Parse("2001:db8:1::/48")), Is.EqualTo((NetworkPrefix)"2001:db8::/47"));
     }
 
     [Test]
     public void GetContainingNetwork_IPv6_02()
     {
         // a /0 used to produce the IPv4 network 0.0.0.0/0 even for IPv6 input
-        Assert.That(NetworkPrefix.GetContainingNetwork("::/0", "2001:db8::/32"), Is.EqualTo((NetworkPrefix)"::/0"));
-        Assert.That(NetworkPrefix.GetContainingNetwork("::/1", "8000::/1"), Is.EqualTo((NetworkPrefix)"::/0"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("::/0"), NetworkPrefix.Parse("2001:db8::/32")), Is.EqualTo((NetworkPrefix)"::/0"));
+        Assert.That(NetworkPrefix.GetContainingNetwork(NetworkPrefix.Parse("::/1"), NetworkPrefix.Parse("8000::/1")), Is.EqualTo((NetworkPrefix)"::/0"));
     }
 
     [Test]
@@ -913,6 +914,15 @@ public class NetworkPrefixTests
     }
 
     [Test]
+    public void Hosts_IPv6_02()
+    {
+        // every address but the subnet-router anycast address is a host
+        var hosts = NetworkPrefix.Parse("2001:db8::/126").Hosts().ToList();
+
+        Assert.That(hosts, Is.EqualTo(new[] { IPAddress.Parse("2001:db8::1"), IPAddress.Parse("2001:db8::2"), IPAddress.Parse("2001:db8::3") }));
+    }
+
+    [Test]
     public void Hosts_IPv6_01()
     {
         // the hosts of a point-to-point prefix at the very end of the address space must end rather than wrap around
@@ -922,21 +932,14 @@ public class NetworkPrefixTests
     }
 
     [Test]
-    public void ImplicitConversion_01()
+    public void ExplicitConversion_01()
     {
-        NetworkPrefix actual = "192.168.13.0/24";
+        // text converts to a prefix only with an explicit cast, because the conversion throws for invalid text
+        var actual = (NetworkPrefix)"192.168.13.0/24";
         var expected = new NetworkPrefix(new IPAddress(new byte[] { 192, 168, 13, 0 }), 24);
 
         Assert.That(actual, Is.EqualTo(expected));
-    }
-
-    [Test]
-    public void ImplicitConversion_02()
-    {
-        string actual = new NetworkPrefix(new IPAddress(new byte[] { 192, 168, 13, 0 }), 24);
-        var expected = "192.168.13.0/24";
-
-        Assert.That(actual, Is.EqualTo(expected));
+        Assert.Throws<FormatException>(() => _ = (NetworkPrefix)"192.168.13.0/33");
     }
 
     [Test]
@@ -970,7 +973,7 @@ public class NetworkPrefixTests
     [Test]
     public void JsonConverter_02()
     {
-        var networks = new List<NetworkPrefix> { "10.20.30.40", "5.10.15.20" };
+        var networks = Prefixes("10.20.30.40", "5.10.15.20").ToList();
 
         var actual = JsonSerializer.Serialize(networks);
 
@@ -1005,7 +1008,7 @@ public class NetworkPrefixTests
             """;
 
         var actual = JsonSerializer.Deserialize<List<NetworkPrefix>>(json);
-        var expected = new List<NetworkPrefix> { "10.20.30.40", "5.10.15.20" };
+        var expected = Prefixes("10.20.30.40", "5.10.15.20").ToList();
 
         Assert.That(actual, Is.EqualTo(expected));
     }
@@ -1016,8 +1019,8 @@ public class NetworkPrefixTests
         // prefixes can be the keys of a dictionary
         var namesByNetwork = new Dictionary<NetworkPrefix, string>
         {
-            ["10.0.0.0/8"] = "private",
-            ["2001:db8::/32"] = "documentation"
+            [NetworkPrefix.Parse("10.0.0.0/8")] = "private",
+            [NetworkPrefix.Parse("2001:db8::/32")] = "documentation"
         };
 
         var json = JsonSerializer.Serialize(namesByNetwork);
@@ -1143,6 +1146,41 @@ public class NetworkPrefixTests
         Assert.That(NetworkPrefix.Parse("10.0.0.0/255.255.255.0"), Is.EqualTo(expected));
         Assert.That(NetworkPrefix.Parse("10.0.0.0/024"), Is.EqualTo(expected));
         Assert.That(NetworkPrefix.Parse("10.0.0.0/24".AsSpan()), Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void Parse_IPv4_07()
+    {
+        // only the standard dotted-decimal form of IPv4 is accepted. IPAddress reads a leading zero as octal, so 010.0.0.0
+        // would otherwise be 8.0.0.0, and it also accepts shorthand, whole-number and hexadecimal forms
+        var nonstandardValues = new[]
+        {
+            "010.0.0.0/8",
+            "10.0.0.010",
+            "10.0.0/24",
+            "10/8",
+            "167772160/8",
+            "0x0a.0.0.0/8",
+            "10.0.0.0 255.255.255.00",
+            "10.0.0.0/0255.255.255.0"
+        };
+
+        // Resolve rejects them too, rather than passing them to DNS, whose resolver could read them as an address its own way
+        foreach (var nonstandardValue in nonstandardValues)
+        {
+            Assert.That(NetworkPrefix.TryParse(nonstandardValue, out _), Is.False, nonstandardValue);
+            Assert.Throws<FormatException>(() => NetworkPrefix.Resolve(nonstandardValue), nonstandardValue);
+        }
+
+        // five numbers is not an address in any form
+        Assert.That(NetworkPrefix.TryParse("10.0.0.0.0/8", out _), Is.False);
+
+        // a lone zero is not a leading zero
+        Assert.That(NetworkPrefix.Parse("0.0.0.0/0"), Is.EqualTo(new NetworkPrefix(IPAddress.Any, 0)));
+        Assert.That(NetworkPrefix.Parse("10.0.0.0 255.0.0.0"), Is.EqualTo(NetworkPrefix.Parse("10.0.0.0/8")));
+
+        // IPv4 written inside IPv6 follows the IPv6 rules
+        Assert.That(NetworkPrefix.Parse("::ffff:10.0.0.0/104").Version, Is.EqualTo(IPVersion.IPv6));
     }
 
     [Test]
@@ -1345,7 +1383,7 @@ public class NetworkPrefixTests
     public void Summarize_IPv4_02()
     {
         // a network that covers every other network is the whole summary; overlapping networks used to be kept
-        var networks = new NetworkPrefix[] { "0.0.0.0/0", "10.0.8.0/23", "10.0.128.0/18", "100.0.0.100/32" };
+        var networks = Prefixes("0.0.0.0/0", "10.0.8.0/23", "10.0.128.0/18", "100.0.0.100/32");
 
         Assert.That(NetworkPrefix.Summarize(networks), Is.EqualTo(new[] { NetworkPrefix.Parse("0.0.0.0/0") }));
     }
@@ -1354,15 +1392,15 @@ public class NetworkPrefixTests
     public void Summarize_IPv4_03()
     {
         // duplicates, and a network listed together with its own halves, used to throw an ArgumentException
-        Assert.That(NetworkPrefix.Summarize(new NetworkPrefix[] { "10.0.0.0/24", "10.0.0.0/24" }), Is.EqualTo(new[] { NetworkPrefix.Parse("10.0.0.0/24") }));
-        Assert.That(NetworkPrefix.Summarize(new NetworkPrefix[] { "10.0.0.0/24", "10.0.0.0/25", "10.0.0.128/25" }), Is.EqualTo(new[] { NetworkPrefix.Parse("10.0.0.0/24") }));
+        Assert.That(NetworkPrefix.Summarize(Prefixes("10.0.0.0/24", "10.0.0.0/24")), Is.EqualTo(new[] { NetworkPrefix.Parse("10.0.0.0/24") }));
+        Assert.That(NetworkPrefix.Summarize(Prefixes("10.0.0.0/24", "10.0.0.0/25", "10.0.0.128/25")), Is.EqualTo(new[] { NetworkPrefix.Parse("10.0.0.0/24") }));
     }
 
     [Test]
     public void Summarize_IPv4_04()
     {
         // merging cascades: two /26s merge into a /25, which then merges with the other /25
-        var networks = new NetworkPrefix[] { "10.0.0.192/26", "10.0.0.0/25", "10.0.0.128/26" };
+        var networks = Prefixes("10.0.0.192/26", "10.0.0.0/25", "10.0.0.128/26");
 
         Assert.That(NetworkPrefix.Summarize(networks), Is.EqualTo(new[] { NetworkPrefix.Parse("10.0.0.0/24") }));
     }
@@ -1371,18 +1409,18 @@ public class NetworkPrefixTests
     public void Summarize_IPv4_05()
     {
         // two networks of the same size that are next to each other but not halves of the same supernet are not merged
-        var networks = new NetworkPrefix[] { "10.0.1.0/24", "10.0.2.0/24" };
+        var networks = Prefixes("10.0.1.0/24", "10.0.2.0/24");
 
         Assert.That(NetworkPrefix.Summarize(networks), Is.EqualTo(networks));
         Assert.That(NetworkPrefix.Summarize(Array.Empty<NetworkPrefix>()), Is.Empty);
-        Assert.Throws<ArgumentNullException>(() => NetworkPrefix.Summarize(new NetworkPrefix[] { "10.0.0.0/8", null! }));
+        Assert.Throws<ArgumentNullException>(() => NetworkPrefix.Summarize(new NetworkPrefix[] { NetworkPrefix.Parse("10.0.0.0/8"), null! }));
     }
 
     [Test]
     public void Summarize_IPv6_01()
     {
         // IPv4 and IPv6 are summarized separately, and the result is sorted with IPv4 first
-        var networks = new NetworkPrefix[] { "2001:db8:1::/48", "10.0.0.0/9", "2001:db8::/48", "10.128.0.0/9" };
+        var networks = Prefixes("2001:db8:1::/48", "10.0.0.0/9", "2001:db8::/48", "10.128.0.0/9");
 
         var expectedResult = new[] { NetworkPrefix.Parse("10.0.0.0/8"), NetworkPrefix.Parse("2001:db8::/47") };
 
@@ -1441,6 +1479,7 @@ public class NetworkPrefixTests
     [Test]
     public void ToString_IPv6_01()
     {
+        // IPv6 has no broadcast address, so the detail has no broadcast row and the last address is the last host
         var network = NetworkPrefix.Parse("2001:0db8:0001:0000:0000:0ab9:C0A8:0102/45");
 
         var actual = network.ToString(NetworkFormat.Detail);
@@ -1449,10 +1488,9 @@ public class NetworkPrefixTests
             Address:    2001:db8::                           0010000000000001:0000110110111000:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000
             Mask:       ffff:ffff:fff8::                     1111111111111111:1111111111111111:1111111111111000:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000
             Wildcard:   ::7:ffff:ffff:ffff:ffff:ffff         0000000000000000:0000000000000000:0000000000000111:1111111111111111:1111111111111111:1111111111111111:1111111111111111:1111111111111111
-            Broadcast:  2001:db8:7:ffff:ffff:ffff:ffff:ffff  0010000000000001:0000110110111000:0000000000000111:1111111111111111:1111111111111111:1111111111111111:1111111111111111:1111111111111111
             First Host: 2001:db8::1                          0010000000000001:0000110110111000:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000000:0000000000000001
-            Last Host:  2001:db8:7:ffff:ffff:ffff:ffff:fffe  0010000000000001:0000110110111000:0000000000000111:1111111111111111:1111111111111111:1111111111111111:1111111111111111:1111111111111110
-            Hosts/Net:  9,671,406,556,917,033,397,649,406
+            Last Host:  2001:db8:7:ffff:ffff:ffff:ffff:ffff  0010000000000001:0000110110111000:0000000000000111:1111111111111111:1111111111111111:1111111111111111:1111111111111111:1111111111111111
+            Hosts/Net:  9,671,406,556,917,033,397,649,407
             
             """;
 
@@ -1476,7 +1514,12 @@ public class NetworkPrefixTests
         var everyAddress = NetworkPrefix.Parse("::/0");
 
         Assert.That(everyAddress.TotalAddresses, Is.EqualTo(BigInteger.Pow(2, 128)));
-        Assert.That(everyAddress.TotalHosts, Is.EqualTo(UInt128.MaxValue - 1));
+
+        // every address except the subnet-router anycast address is a host
+        Assert.That(everyAddress.TotalHosts, Is.EqualTo(UInt128.MaxValue));
+        Assert.That(NetworkPrefix.Parse("2001:db8::/64").TotalHosts, Is.EqualTo((UInt128)ulong.MaxValue));
+        Assert.That(NetworkPrefix.Parse("2001:db8::/127").TotalHosts, Is.EqualTo((UInt128)2));
+        Assert.That(NetworkPrefix.Parse("2001:db8::/128").TotalHosts, Is.EqualTo((UInt128)1));
     }
 
     [Test]
@@ -1532,7 +1575,7 @@ public class NetworkPrefixTests
     [Test]
     public void XmlConverter_02()
     {
-        var networks = new List<NetworkPrefix> { "10.20.30.40/15", "50.60.70.80/15" };
+        var networks = Prefixes("10.20.30.40/15", "50.60.70.80/15").ToList();
 
         var outputStream = new MemoryStream();
         var xmlSerializer = new XmlSerializer(typeof(List<NetworkPrefix>));
@@ -1585,7 +1628,7 @@ public class NetworkPrefixTests
         var inputStream = new StringReader(xml);
         var xmlSerializer = new XmlSerializer(typeof(List<NetworkPrefix>));
         var actual = (List<NetworkPrefix>?)xmlSerializer.Deserialize(inputStream);
-        var expected = new List<NetworkPrefix> { "10.20.0.0/15", "50.60.0.0/15" };
+        var expected = Prefixes("10.20.0.0/15", "50.60.0.0/15").ToList();
 
         Assert.That(actual, Is.EqualTo(expected));
     }
@@ -1601,6 +1644,14 @@ public class NetworkPrefixTests
 
         var malformedPrefixException = Assert.Throws<InvalidOperationException>(() => xmlSerializer.Deserialize(new StringReader("<NetworkPrefix>10.0.0.0/33</NetworkPrefix>")));
         Assert.That(malformedPrefixException?.InnerException, Is.TypeOf<FormatException>());
+    }
+
+    /// <summary>
+    ///     Parses the text of each prefix.
+    /// </summary>
+    private static NetworkPrefix[] Prefixes(params string[] prefixTexts)
+    {
+        return prefixTexts.Select(NetworkPrefix.Parse).ToArray();
     }
 
     /// <summary>

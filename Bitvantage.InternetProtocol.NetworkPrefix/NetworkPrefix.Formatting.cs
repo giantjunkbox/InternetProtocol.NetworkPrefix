@@ -109,12 +109,16 @@ public sealed partial class NetworkPrefix : IFormattable
         {
             ("Address:", NetworkAddress.ToString(), FormatBinary(NetworkAddressBits)),
             ("Mask:", NetworkMask.ToString(), FormatBinary(NetworkMaskBits)),
-            ("Wildcard:", HostMask.ToString(), FormatBinary(HostMaskBits)),
-            ("Broadcast:", BroadcastAddress.ToString(), FormatBinary(LastAddressBits)),
-            ("First Host:", FirstHost.ToString(), FormatBinary(FirstHostBits)),
-            ("Last Host:", LastHost.ToString(), FormatBinary(LastHostBits)),
-            ("Hosts/Net:", TotalHosts.ToString("N0", CultureInfo.InvariantCulture), string.Empty)
+            ("Wildcard:", HostMask.ToString(), FormatBinary(HostMaskBits))
         };
+
+        // IPv6 has no broadcast address; its last address is a host address, and appears as the last host
+        if (Version == IPVersion.IPv4)
+            rows.Add(("Broadcast:", BroadcastAddress.ToString(), FormatBinary(LastAddressBits)));
+
+        rows.Add(("First Host:", FirstHost.ToString(), FormatBinary(FirstHostBits)));
+        rows.Add(("Last Host:", LastHost.ToString(), FormatBinary(LastHostBits)));
+        rows.Add(("Hosts/Net:", TotalHosts.ToString("N0", CultureInfo.InvariantCulture), string.Empty));
 
         // pad the label and value columns to their widest entries so that the columns line up
         var labelWidth = rows.Max(row => row.Label.Length);

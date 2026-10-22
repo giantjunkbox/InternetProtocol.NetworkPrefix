@@ -32,8 +32,8 @@ public enum NetworkFormat
     AddressAndPrefix,
 
     /// <summary>
-    ///     A multi-line table of the network address, masks, broadcast address, host range and host count, with each value
-    ///     also written in binary.
+    ///     A multi-line table of the network address, masks, broadcast address for IPv4, host range and host count, with each
+    ///     address also written in binary.
     /// </summary>
     Detail,
 
