@@ -4,6 +4,7 @@
 		<TargetFramework>net10.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 
 		<AssemblyName>$(MSBuildProjectName)</AssemblyName>
 		<RootNamespace>Bitvantage.InternetProtocol</RootNamespace>
@@ -11,13 +12,13 @@
 		<PackageProjectUrl>https://github.com/Bitvantage/InternetProtocol.NetworkPrefix</PackageProjectUrl>
 		<PackageIcon>icon.png</PackageIcon>
 		<RepositoryType>git</RepositoryType>
-		<PackageTags>network;networking;ip network;network prefix;prefix;ipaddress;ip address</PackageTags>
-		<VersionPrefix>2.0.0</VersionPrefix>
-		<FileVersion>2.0.0</FileVersion>
-		<AssemblyVersion>2.0.0</AssemblyVersion>
+		<PackageTags>network;networking;ip network;ipnetwork;network prefix;prefix;cidr;subnet;ipaddress;ip address;ipv4;ipv6</PackageTags>
+		<VersionPrefix>3.0.0</VersionPrefix>
+		<FileVersion>3.0.0</FileVersion>
+		<AssemblyVersion>3.0.0</AssemblyVersion>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
-		<Description>A library for working with IPv4 and IPV6 network prefixes.</Description>
+		<Description>A library for working with IPv4 and IPv6 network prefixes, which also extends System.Net.IPNetwork with masks, host ranges, containment, splitting and summarization.</Description>
 		<RepositoryUrl>https://github.com/Bitvantage/InternetProtocol.NetworkPrefix.git</RepositoryUrl>
 		<Copyright>Copyright © Michael Crino 2024</Copyright>
 

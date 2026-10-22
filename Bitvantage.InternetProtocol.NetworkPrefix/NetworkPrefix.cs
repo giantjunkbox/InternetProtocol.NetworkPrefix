@@ -1,4 +1,4 @@
-﻿/*
+/*
    Bitvantage.InternetProtocol.NetworkPrefix
    Copyright (C) 2024 Michael Crino
    
@@ -16,1267 +16,540 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
-using System.Globalization;
 using System.Net;
-using System.Net.Sockets;
 using System.Numerics;
-using System.Runtime.CompilerServices;
-using System.Text;
 using System.Text.Json.Serialization;
-using System.Xml;
-using System.Xml.Schema;
-using System.Xml.Serialization;
 using Bitvantage.InternetProtocol.Converters;
 
 namespace Bitvantage.InternetProtocol;
 
-public enum NetworkFormat
-{
-    AddressAndPrefix,
-    Detail,
-    AddressAndMask,
-    Address,
-    Mask
-}
-
-public enum AddressAllocation
-{
-    Undefined = 0,
-    Private = 1,
-    Global = 2,
-    AutomaticPrivateIPAddressing = 3,
-    Loopback = 4,
-    CurrentNetwork = 5,
-    Multicast = 6,
-    Experimental = 7,
-    Broadcast = 8
-}
-
-public enum NetworkClass
-{
-    Undefined = 0,
-    A = 1,
-    B = 2,
-    C = 3,
-    D = 4,
-    E = 5
-}
-
-public enum IPVersion
-{
-    Undefined = 0,
-    IPv4 = 1,
-    IPv6 = 2
-}
-
-[Serializable]
+/// <summary>
+///     An immutable IPv4 or IPv6 network prefix, such as <c>10.0.0.0/8</c> or <c>2001:db8::/32</c>.
+/// </summary>
+/// <remarks>
+///     <para>
+///         A prefix is a network address and a prefix length. The prefix length is the number of leading bits of the address
+///         that identify the network, and the remaining bits identify a host within that network. Any host bits that are set in
+///         the address a prefix is created from are cleared, so <c>10.1.2.3/8</c> becomes <c>10.0.0.0/8</c>.
+///     </para>
+///     <para>
+///         A prefix converts implicitly to and from <see cref="IPNetwork" />, and <see cref="IPNetworkExtensions" /> adds the
+///         functionality of this class to <see cref="IPNetwork" /> itself.
+///     </para>
+/// </remarks>
 [JsonConverter(typeof(NetworkPrefixJsonConverter))]
-public class NetworkPrefix : IComparable<NetworkPrefix>, IXmlSerializable
+public sealed partial class NetworkPrefix : IEquatable<NetworkPrefix>, IComparable<NetworkPrefix>, IComparable
 {
-    private static readonly UInt128[] Ipv4HostMaskBits = new UInt128[33];
-    private static readonly UInt128[] Ipv6HostMaskBits = new UInt128[129];
-
-    private static readonly UInt128[] Ipv4NetworkMaskBits = new UInt128[33];
-    private static readonly UInt128[] Ipv6NetworkMaskBits = new UInt128[129];
-
-    private static readonly IPAddress[] Ipv4HostMaskObjects = new IPAddress[33];
-    private static readonly IPAddress[] Ipv6HostMaskObjects = new IPAddress[129];
-
-    private static readonly IPAddress[] Ipv4NetworkMaskObjects = new IPAddress[33];
-    private static readonly IPAddress[] Ipv6NetworkMaskObjects = new IPAddress[129];
-
-    private static readonly Dictionary<IPAddress, int> IpHostMaskToPrefix = new();
-    private static readonly Dictionary<IPAddress, int> IpNetworkMaskToPrefix = new();
-
-    private static readonly UInt128[] Ipv4HostCount = new UInt128[33];
-    private static readonly UInt128[] Ipv6HostCount = new UInt128[129];
-
-    private static readonly BigInteger[] Ipv4AddressCount = new BigInteger[33];
-    private static readonly BigInteger[] Ipv6AddressCount = new BigInteger[129];
-
-    private static readonly Dictionary<NetworkPrefix, AddressAllocation> Allocations;
-    private static readonly Dictionary<NetworkPrefix, NetworkClass> Classes;
-
-
-    public ushort AddressLength { get; private set; }
-    public UInt128 NetworkBits { get; private set; }
-
-    public AddressAllocation Allocation
+    /// <summary>
+    ///     Initializes a new prefix from an address and a prefix length.
+    /// </summary>
+    /// <param name="address">An address within the network. Any host bits that are set are cleared.</param>
+    /// <param name="prefixLength">The number of leading bits that identify the network, from 0 to 32 for IPv4 or 0 to 128 for IPv6.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="address" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="address" /> is neither an IPv4 nor an IPv6 address.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="prefixLength" /> is out of range for the IP version.</exception>
+    public NetworkPrefix(IPAddress address, int prefixLength)
     {
-        get
-        {
-            var allocation = Allocations
-                .Where(item => item.Key.ContainsOrEqual(this))
-                .MaxBy(item => item.Key.Length);
-            
-            return allocation.Value;
-        }
-    }
+        var version = GetVersionOf(address, nameof(address));
 
-    public IPAddress Broadcast => UInt128ToIpAddress(NetworkBits ^ HostMaskBits);
-    public NetworkClass Class
-    {
-        get
-        {
-            var @class = Classes
-                .Where(item => item.Key.ContainsOrEqual(this))
-                .MaxBy(item => item.Key.Length);
+        ArgumentOutOfRangeException.ThrowIfNegative(prefixLength);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(prefixLength, AddressBits.GetBitLength(version));
 
-            return @class.Value;
-        }
+        Initialize(AddressBits.FromIPAddress(address), prefixLength, version);
     }
 
     /// <summary>
-    ///     Returns the complementary <c>NetworkPrefix</c>.
-    ///     A complementary prefix is the prefix that has the same mask and same address, except the least significant bit of
-    ///     the address is flipped.
-    ///     For example the complementary prefix of 10.1.2.0/25 is 10.1.2.128/25 and vice versa
+    ///     Initializes a new host prefix, a /32 for IPv4 or a /128 for IPv6, that holds a single address.
     /// </summary>
-    /// <exception cref="ArgumentException">Thrown when the prefix length is 0</exception>
+    /// <param name="address">The address.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="address" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="address" /> is neither an IPv4 nor an IPv6 address.</exception>
+    public NetworkPrefix(IPAddress address)
+    {
+        var version = GetVersionOf(address, nameof(address));
+
+        Initialize(AddressBits.FromIPAddress(address), AddressBits.GetBitLength(version), version);
+    }
+
+    /// <summary>
+    ///     Initializes a new prefix from an address and a network mask, such as <c>10.0.0.0</c> and <c>255.255.255.0</c>.
+    /// </summary>
+    /// <param name="address">An address within the network. Any host bits that are set are cleared.</param>
+    /// <param name="networkMask">The network mask, which must be the same IP version as <paramref name="address" />.</param>
+    /// <exception cref="ArgumentNullException">Thrown when either argument is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">
+    ///     Thrown when <paramref name="address" /> is neither an IPv4 nor an IPv6 address, or when <paramref name="networkMask" />
+    ///     is not a valid network mask of the same IP version.
+    /// </exception>
+    public NetworkPrefix(IPAddress address, IPAddress networkMask)
+    {
+        var version = GetVersionOf(address, nameof(address));
+        ArgumentNullException.ThrowIfNull(networkMask);
+
+        if (!TryGetPrefixLength(networkMask, version, out var prefixLength))
+            throw new ArgumentException($"'{networkMask}' is not a valid {version} network mask. A network mask is a run of one bits followed by a run of zero bits, such as 255.255.255.0.", nameof(networkMask));
+
+        Initialize(AddressBits.FromIPAddress(address), prefixLength, version);
+    }
+
+    /// <summary>
+    ///     Initializes a new prefix with the same network address and prefix length as an <see cref="IPNetwork" />.
+    /// </summary>
+    /// <param name="network">The network to copy.</param>
+    public NetworkPrefix(IPNetwork network) : this(network.BaseAddress, network.PrefixLength)
+    {
+    }
+
+    /// <summary>
+    ///     Initializes a new prefix from an address in integer form that the caller has already validated, which avoids the cost
+    ///     of converting the address through an <see cref="IPAddress" />.
+    /// </summary>
+    /// <param name="addressBits">An address within the network, in integer form. Any host bits that are set are cleared.</param>
+    /// <param name="prefixLength">A prefix length that is valid for <paramref name="version" />.</param>
+    /// <param name="version">The IP version.</param>
+    private NetworkPrefix(UInt128 addressBits, int prefixLength, IPVersion version)
+    {
+        Initialize(addressBits, prefixLength, version);
+    }
+
+    /// <summary>
+    ///     Initializes an empty prefix for <see cref="System.Xml.Serialization.XmlSerializer" />, which creates the instance first
+    ///     and then fills it in through <see cref="System.Xml.Serialization.IXmlSerializable.ReadXml" />.
+    /// </summary>
+    private NetworkPrefix()
+    {
+        Initialize(UInt128.Zero, 0, IPVersion.IPv4);
+    }
+
+    /// <summary>
+    ///     The number of bits in an address of this prefix's IP version: 32 for IPv4, or 128 for IPv6.
+    /// </summary>
+    public int AddressBitLength { get; private set; }
+
+    /// <summary>
+    ///     The last address in the network, in which every host bit is set. For example, <c>10.0.0.255</c> for <c>10.0.0.0/24</c>.
+    /// </summary>
+    /// <remarks>
+    ///     IPv6 has no broadcast, so for an IPv6 prefix this is simply the last address; it is the same as <see cref="LastAddress" />.
+    /// </remarks>
+    public IPAddress BroadcastAddress => LastAddress;
+
+    /// <summary>
+    ///     Returns the other half of this prefix's supernet: the prefix of the same length whose network address differs only in
+    ///     its last network bit. For example, the complementary prefix of <c>10.1.2.0/25</c> is <c>10.1.2.128/25</c>, and the other
+    ///     way round.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when the prefix length is 0, since such a prefix spans every address.</exception>
     public NetworkPrefix ComplementaryPrefix
     {
         get
         {
-            if (Length == 0)
-                throw new ArgumentException($"{this} has no complementary network");
+            if (PrefixLength == 0)
+                throw new InvalidOperationException($"{this} spans every address of its version and has no complementary prefix.");
 
-            // XOR the last bit in the network
-            var complementaryBits = NetworkBits ^ (UInt128.One << (AddressLength - Length));
-
-            // convert the bits to an IP address
-            var complementaryAddress = UInt128ToIpAddress(complementaryBits);
-
-            // construct a new network
-            var complementaryNetwork = new NetworkPrefix(complementaryAddress, Length);
-
-            return complementaryNetwork;
+            // flip the last network bit, which is the bit immediately above the host bits
+            var lastNetworkBit = UInt128.One << HostBitLength;
+            return new NetworkPrefix(NetworkAddressBits ^ lastNetworkBit, PrefixLength, Version);
         }
     }
 
     /// <summary>
-    ///     Returns the first host address
+    ///     The first address in the network that can be assigned to a host.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">Throws when the prefix is zero</exception>
-    public IPAddress FirstHost
-    {
-        get
-        {
-            // special cases
-            // /0's are network addresses, they have no host addresses
-            // /31's and /127 have not network or broadcast address and are all host addresses
-            // /32's and /128's are host addresses. Host addresses are the first and last address
-            if (Length == 0)
-                throw new ArgumentOutOfRangeException();
-
-            if (Length >= AddressLength - 1)
-                return Address;
-
-            return UInt128ToIpAddress(NetworkBits + 1);
-        }
-    }
+    /// <remarks>
+    ///     This is the address after the network address, except for a /31 or /127 point-to-point prefix (RFC 3021 and RFC 6164),
+    ///     where both addresses are usable, and for a host prefix, which holds just one address.
+    /// </remarks>
+    public IPAddress FirstHost => ToIPAddress(FirstHostBits);
 
     /// <summary>
-    ///     Returns the last host address
+    ///     The number of bits of an address that identify a host within the network: <see cref="AddressBitLength" /> minus
+    ///     <see cref="PrefixLength" />.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">Throws when the prefix is zero</exception>
-    public IPAddress LastHost
-    {
-        get
-        {
-            // special cases
-            // /0's are network addresses, they have no host addresses
-            // /31's and /127 have not network or broadcast address and are all host addresses
-            // /32's and /128's are host addresses. Host addresses are the first and last address
-            if (Length == 0)
-                throw new ArgumentOutOfRangeException();
-
-            if (Length == AddressLength)
-                return Address;
-
-            if (Length == AddressLength - 1)
-                return UInt128ToIpAddress(NetworkBits ^ HostMaskBits);
-
-            return UInt128ToIpAddress(NetworkBits ^ (HostMaskBits - 1)); // BUG: is this correct?
-        }
-    }
+    public int HostBitLength => AddressBitLength - PrefixLength;
 
     /// <summary>
-    ///     The network mask
+    ///     The host mask, which has a one in every bit that identifies a host. For example, <c>0.0.0.255</c> for a /24.
     /// </summary>
-    public IPAddress Mask
-    {
-        get
-        {
-            return Version switch
-            {
-                IPVersion.IPv4 => Ipv4NetworkMaskObjects[Length],
-                IPVersion.IPv6 => Ipv6NetworkMaskObjects[Length],
-                _ => throw new ArgumentOutOfRangeException()
-            };
-        }
-    }
+    /// <remarks>
+    ///     The host mask is the inverse of the <see cref="NetworkMask" />, and Cisco access control lists call it a wildcard mask.
+    /// </remarks>
+    public IPAddress HostMask => ToIPAddress(HostMaskBits);
 
     /// <summary>
-    ///     The total count of addresses in the <c>NetworkPrefix</c>
+    ///     The host mask in integer form. See <see cref="HostMask" />.
     /// </summary>
-    public BigInteger TotalAddresses
-    {
-        get
-        {
-            return Version switch
-            {
-                IPVersion.IPv4 => Ipv4AddressCount[Length],
-                IPVersion.IPv6 => Ipv6AddressCount[Length],
-                _ => throw new ArgumentOutOfRangeException()
-            };
-        }
-    }
+    public UInt128 HostMaskBits { get; private set; }
 
     /// <summary>
-    ///     The total number of host address in the <c>NetworkPrefix</c>
+    ///     Gets whether this is a host prefix, a /32 or a /128, which holds a single address.
+    /// </summary>
+    public bool IsHostPrefix => HostBitLength == 0;
+
+    /// <summary>
+    ///     The last address in the network, in which every host bit is set. For example, <c>10.0.0.255</c> for <c>10.0.0.0/24</c>.
+    /// </summary>
+    public IPAddress LastAddress => ToIPAddress(LastAddressBits);
+
+    /// <summary>
+    ///     The last address in the network that can be assigned to a host.
+    /// </summary>
+    /// <remarks>
+    ///     This is the address before the broadcast address, except for a /31 or /127 point-to-point prefix (RFC 3021 and
+    ///     RFC 6164), where both addresses are usable, and for a host prefix, which holds just one address.
+    /// </remarks>
+    public IPAddress LastHost => ToIPAddress(LastHostBits);
+
+    /// <summary>
+    ///     The network address, which is the first address in the network and has every host bit cleared. For example,
+    ///     <c>10.0.0.0</c> for <c>10.0.0.0/24</c>.
+    /// </summary>
+    public IPAddress NetworkAddress { get; private set; }
+
+    /// <summary>
+    ///     The network address in integer form. See <see cref="NetworkAddress" />.
+    /// </summary>
+    public UInt128 NetworkAddressBits { get; private set; }
+
+    /// <summary>
+    ///     The network mask, also called the subnet mask, which has a one in every bit that identifies the network. For example,
+    ///     <c>255.255.255.0</c> for a /24.
+    /// </summary>
+    public IPAddress NetworkMask => ToIPAddress(NetworkMaskBits);
+
+    /// <summary>
+    ///     The network mask in integer form. See <see cref="NetworkMask" />.
+    /// </summary>
+    public UInt128 NetworkMaskBits { get; private set; }
+
+    /// <summary>
+    ///     The number of leading bits of an address that identify the network, from 0 to 32 for IPv4 or 0 to 128 for IPv6.
+    /// </summary>
+    public int PrefixLength { get; private set; }
+
+    /// <summary>
+    ///     The total number of addresses in the network, including the network and broadcast addresses.
+    /// </summary>
+    /// <remarks>
+    ///     The count is a <see cref="BigInteger" /> because the 2^128 addresses of <c>::/0</c> do not fit in a <see cref="UInt128" />.
+    /// </remarks>
+    public BigInteger TotalAddresses => (BigInteger)HostMaskBits + BigInteger.One;
+
+    /// <summary>
+    ///     The number of addresses in the network that can be assigned to a host. This excludes the network and broadcast
+    ///     addresses, except for /31, /127 and host prefixes, where every address is usable.
     /// </summary>
     public UInt128 TotalHosts
     {
         get
         {
-            return Version switch
+            return HostBitLength switch
             {
-                IPVersion.IPv4 => Ipv4HostCount[Length],
-                IPVersion.IPv6 => Ipv6HostCount[Length],
-                _ => throw new ArgumentOutOfRangeException()
+                // a host prefix holds one address, and a point-to-point prefix holds two, all of which are usable
+                0 => UInt128.One,
+                1 => 2,
+
+                // every address, which is the host mask plus one, less the network and broadcast addresses
+                _ => HostMaskBits - UInt128.One
             };
         }
     }
 
     /// <summary>
-    ///     The wildcard mask of the <c>NetworkPrefix</c>.
-    ///     A wildcard mask is the inverted subnet mask
+    ///     The version of the Internet Protocol of this prefix.
     /// </summary>
-    public IPAddress Wildcard
+    public IPVersion Version { get; private set; }
+
+    /// <summary>
+    ///     The first host address in integer form. See <see cref="FirstHost" />.
+    /// </summary>
+    private UInt128 FirstHostBits => HostBitLength <= 1 ? NetworkAddressBits : NetworkAddressBits + UInt128.One;
+
+    /// <summary>
+    ///     The last address in integer form. See <see cref="LastAddress" />.
+    /// </summary>
+    private UInt128 LastAddressBits => NetworkAddressBits | HostMaskBits;
+
+    /// <summary>
+    ///     The last host address in integer form. See <see cref="LastHost" />.
+    /// </summary>
+    private UInt128 LastHostBits => HostBitLength <= 1 ? LastAddressBits : LastAddressBits - UInt128.One;
+
+    /// <summary>
+    ///     Compares this prefix with another object. See <see cref="CompareTo(NetworkPrefix)" />.
+    /// </summary>
+    /// <param name="obj">The object to compare with, which must be a <see cref="NetworkPrefix" /> or <see langword="null" />.</param>
+    /// <returns>A negative number, zero, or a positive number when this prefix sorts before, the same as, or after <paramref name="obj" />.</returns>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="obj" /> is not a <see cref="NetworkPrefix" />.</exception>
+    int IComparable.CompareTo(object? obj)
     {
-        get
+        return obj switch
         {
-            return Version switch
-            {
-                IPVersion.IPv4 => Ipv4HostMaskObjects[Length],
-                IPVersion.IPv6 => Ipv6HostMaskObjects[Length],
-                _ => throw new ArgumentOutOfRangeException()
-            };
-        }
-    }
-
-    /// <summary>
-    ///     The network address
-    /// </summary>
-    public IPAddress Address { get; set; }
-
-    /// <summary>
-    ///     The length of the prefix that is used to represent the <c>NetworkPrefix</c> portion of the address
-    /// </summary>
-    public int Length { get; set; }
-
-    /// <summary>
-    ///     The version of Internet Protocol represented by the <c>NetworkPrefix</c>
-    /// </summary>
-    public IPVersion Version { get; set; }
-
-    public UInt128 HostMaskBits { get; set; }
-
-    public UInt128 NetworkMaskBits { get; set; }
-
-    static NetworkPrefix()
-    {
-        // compute the bit values for all possible masks
-        for (var i = 31; i >= 0; i--)
-            Ipv4HostMaskBits[i] = (Ipv4HostMaskBits[i + 1] << 1) ^ 1;
-
-        for (var i = 127; i >= 0; i--)
-            Ipv6HostMaskBits[i] = (Ipv6HostMaskBits[i + 1] << 1) ^ 1;
-
-        Ipv4NetworkMaskBits[32] = 0xff_ff_ff_ff;
-        for (var i = 31; i >= 0; i--)
-            Ipv4NetworkMaskBits[i] = (Ipv4NetworkMaskBits[i + 1] << 1) & Ipv4NetworkMaskBits[32];
-
-        Ipv6NetworkMaskBits[128] = new UInt128(0xff_ff_ff_ff_ff_ff_ff_ff, 0xff_ff_ff_ff_ff_ff_ff_ff);
-        for (var i = 127; i >= 0; i--)
-            Ipv6NetworkMaskBits[i] = (Ipv6NetworkMaskBits[i + 1] << 1) & Ipv6NetworkMaskBits[128];
-
-        // compute the IP address objects for all possible masks
-        for (var i = 0; i < 33; i++)
-        {
-            var addressBytes =
-                ((BigInteger)Ipv4HostMaskBits[i])
-                .ToByteArray()
-                .Concat(Enumerable.Repeat<byte>(0, 4))
-                .Take(4)
-                .Reverse()
-                .ToArray();
-
-            Ipv4HostMaskObjects[i] = new IPAddress(addressBytes);
-        }
-
-        for (var i = 0; i < 129; i++)
-        {
-            var addressBytes =
-                ((BigInteger)Ipv6HostMaskBits[i])
-                .ToByteArray()
-                .Concat(Enumerable.Repeat<byte>(0, 16))
-                .Take(16)
-                .Reverse()
-                .ToArray();
-
-            Ipv6HostMaskObjects[i] = new IPAddress(addressBytes);
-        }
-
-        for (var i = 0; i < 33; i++)
-        {
-            var addressBytes =
-                ((BigInteger)Ipv4NetworkMaskBits[i])
-                .ToByteArray()
-                .Concat(Enumerable.Repeat<byte>(0, 4))
-                .Take(4)
-                .Reverse()
-                .ToArray();
-
-            Ipv4NetworkMaskObjects[i] = new IPAddress(addressBytes);
-        }
-
-        for (var i = 0; i < 129; i++)
-        {
-            var addressBytes =
-                ((BigInteger)Ipv6NetworkMaskBits[i])
-                .ToByteArray()
-                .Concat(Enumerable.Repeat<byte>(0, 16))
-                .Take(16)
-                .Reverse()
-                .ToArray();
-
-            Ipv6NetworkMaskObjects[i] = new IPAddress(addressBytes);
-        }
-
-        // generate a dictionary of the prefix length for each possible prefix
-        for (var i = 0; i < 32; i++)
-            IpHostMaskToPrefix.Add(Ipv4HostMaskObjects[i], i);
-
-        for (var i = 0; i < 128; i++)
-            IpHostMaskToPrefix.Add(Ipv6HostMaskObjects[i], i);
-
-        for (var i = 0; i < 33; i++)
-            IpNetworkMaskToPrefix.Add(Ipv4NetworkMaskObjects[i], i);
-
-        for (var i = 0; i < 129; i++)
-            IpNetworkMaskToPrefix.Add(Ipv6NetworkMaskObjects[i], i);
-
-        // calculate the total hosts per network
-        UInt128 count = 0xff_ff_ff_ff;
-        for (var i = 0; i < 31; i++)
-        {
-            count = count >> 1;
-            Ipv4HostCount[i] = count << 1;
-        }
-
-        Ipv4HostCount[31] = 2;
-        Ipv4HostCount[32] = 1;
-
-        count = new UInt128(0xff_ff_ff_ff_ff_ff_ff_ff, 0xff_ff_ff_ff_ff_ff_ff_ff);
-        for (var i = 0; i < 127; i++)
-        {
-            count = count >> 1;
-            Ipv6HostCount[i] = count << 1;
-        }
-
-        Ipv6HostCount[127] = 2;
-        Ipv6HostCount[128] = 1;
-
-        // calculate the total addresses per network
-        for (var i = 0; i < 32; i++)
-            Ipv4AddressCount[i] = BigInteger.One << (32 - i);
-
-        Ipv4AddressCount[32] = 1;
-
-
-        for (var i = 0; i < 128; i++)
-            Ipv6AddressCount[i] = BigInteger.One << (128 - i);
-
-        Ipv6AddressCount[128] = 1;
-
-        // populate the allocation lookup
-        Allocations = new Dictionary<NetworkPrefix, AddressAllocation>
-        {
-            {"::/0", AddressAllocation.Undefined},
-            { "0.0.0.0/0", AddressAllocation.Undefined },
-
-            { "10.0.0.0/8", AddressAllocation.Private },
-            { "172.16.0.0/12", AddressAllocation.Private },
-            { "192.168.0.0/16", AddressAllocation.Private },
-
-            { "0.0.0.0/5", AddressAllocation.Global },
-            { "8.0.0.0/7", AddressAllocation.Global },
-            { "11.0.0.0/8", AddressAllocation.Global },
-            { "12.0.0.0/6", AddressAllocation.Global },
-            { "16.0.0.0/4", AddressAllocation.Global },
-            { "32.0.0.0/3", AddressAllocation.Global },
-            { "64.0.0.0/2", AddressAllocation.Global },
-            { "128.0.0.0/3", AddressAllocation.Global },
-            { "160.0.0.0/5", AddressAllocation.Global },
-            { "168.0.0.0/6", AddressAllocation.Global },
-            { "172.0.0.0/12", AddressAllocation.Global },
-            { "172.32.0.0/11", AddressAllocation.Global },
-            { "172.64.0.0/10", AddressAllocation.Global },
-            { "172.128.0.0/9", AddressAllocation.Global },
-            { "173.0.0.0/8", AddressAllocation.Global },
-            { "174.0.0.0/7", AddressAllocation.Global },
-            { "176.0.0.0/4", AddressAllocation.Global },
-            { "192.0.0.0/9", AddressAllocation.Global },
-            { "192.128.0.0/11", AddressAllocation.Global },
-            { "192.160.0.0/13", AddressAllocation.Global },
-            { "192.169.0.0/16", AddressAllocation.Global },
-            { "192.170.0.0/15", AddressAllocation.Global },
-            { "192.172.0.0/14", AddressAllocation.Global },
-            { "192.176.0.0/12", AddressAllocation.Global },
-            { "192.192.0.0/10", AddressAllocation.Global },
-            { "193.0.0.0/8", AddressAllocation.Global },
-            { "194.0.0.0/7", AddressAllocation.Global },
-            { "196.0.0.0/6", AddressAllocation.Global },
-            { "200.0.0.0/5", AddressAllocation.Global },
-            { "208.0.0.0/4", AddressAllocation.Global },
-
-            { "169.254.0.0/16", AddressAllocation.AutomaticPrivateIPAddressing },
-            { "127.0.0.0/8", AddressAllocation.Loopback },
-            { "0.0.0.0/8", AddressAllocation.CurrentNetwork },
-            { "240.0.0.0/4", AddressAllocation.Experimental },
-            { "224.0.0.0/4", AddressAllocation.Multicast },
-            { "255.255.255.255/32", AddressAllocation.Broadcast }
-        };
-
-        // populate the class lookup
-        Classes = new Dictionary<NetworkPrefix, NetworkClass>
-        {
-            { "::/0", NetworkClass.Undefined },
-            { "0.0.0.0/0", NetworkClass.Undefined },
-            { "0.0.0.0/1", NetworkClass.A },
-            { "128.0.0.0/2", NetworkClass.B },
-            { "192.0.0.0/3", NetworkClass.C },
-            { "224.0.0.0/4", NetworkClass.D },
-            { "240.0.0.0/4", NetworkClass.E }
+            null => 1,
+            NetworkPrefix otherNetwork => CompareTo(otherNetwork),
+            _ => throw new ArgumentException($"Object must be of type {nameof(NetworkPrefix)}.", nameof(obj))
         };
     }
 
-    private NetworkPrefix()
-    {
-    }
-
-    public NetworkPrefix(IPAddress ipAddress, int prefix)
-    {
-        SetNetworkValues(ipAddress, prefix);
-    }
-
-
-    public NetworkPrefix(IPAddress ipAddress) : this(ipAddress, GetHostAddressPrefix(ipAddress))
-    {
-    }
-
-
-    public NetworkPrefix(IPAddress ipAddress, IPAddress mask) : this(ipAddress, GetPrefix(mask))
-    {
-    }
-
-    public IEnumerable<IPAddress> Addresses()
-    {
-        var startAddress = NetworkBits;
-        var endAddress = NetworkBits ^ HostMaskBits;
-
-        for (var i = startAddress; i <= endAddress; i++)
-            yield return UInt128ToIpAddress(i);
-    }
-
     /// <summary>
-    ///     Determines if this <c>NetworkPrefix</c> is contained within the <paramref name="networkPrefix" />
+    ///     Compares this prefix with another prefix to determine their sort order.
     /// </summary>
-    /// <param name="networkPrefix"></param>
-    /// <returns></returns>
-    public bool ContainedBy(NetworkPrefix networkPrefix)
-    {
-        return networkPrefix.Contains(this);
-    }
-
-    /// <summary>
-    ///     Determines if this <c>NetworkPrefix</c> is contained within the <paramref name="networkPrefix" /> or equal to it
-    /// </summary>
-    /// <param name="networkPrefix"></param>
-    /// <returns></returns>
-    public bool ContainedByOrEqual(NetworkPrefix networkPrefix)
-    {
-        return networkPrefix.ContainsOrEqual(this);
-    }
-
-    /// <summary>
-    ///     Determines if the
-    ///     <param name="address"></param>
-    ///     is contained within this network
-    /// </summary>
-    /// <param name="address"></param>
-    /// <returns></returns>
-    public bool Contains(IPAddress address)
-    {
-        var hostNetwork = new NetworkPrefix(address);
-
-        // an address is a member of this network rather than a network nested inside of it,
-        // so a host prefix, such as a /32 or a /128, contains the single address that it represents
-        return ContainsOrEqual(hostNetwork);
-    }
-
-    /// <summary>
-    ///     Determines if the
-    ///     <param name="networkPrefix"></param>
-    ///     is contained within this network
-    /// </summary>
-    /// <param name="networkPrefix"></param>
-    /// <returns></returns>
-    public bool Contains(NetworkPrefix networkPrefix)
-    {
-        // BUG: should we throw an exception for this? hmm...
-        if (Version != networkPrefix.Version)
-            return false;
-
-        // a small network can't contain a bigger one...
-        if (Length >= networkPrefix.Length)
-            return false;
-
-        // the smaller network must have the same network prefix as the larger network
-
-        // AND the network mask of this address to the network bits of the other network
-        // if the network is contained by this network then the resulting network bits should be the same as this networks bits.
-        return (networkPrefix.NetworkBits & NetworkMaskBits) == NetworkBits;
-    }
-
-    /// <summary>
-    ///     Determines if the <paramref name="networkPrefix"></paramref> is contained within this <c>NetworkPrefix</c> or equal to it
-    /// </summary>
-    /// <param name="networkPrefix"></param>
-    /// <returns></returns>
-    public bool ContainsOrEqual(NetworkPrefix networkPrefix)
-    {
-        // BUG: should we throw an exception for this? hmm...
-        if (Version != networkPrefix.Version)
-            return false;
-
-        // a small network can't contain a bigger one...
-        if (Length > networkPrefix.Length)
-            return false;
-
-        // the smaller network must have the same network prefix as the larger network
-
-        // AND the network mask of this address to the network bits of the other network
-        // if the network is contained by this network then the resulting network bits should be the same as this networks bits.
-        return (networkPrefix.NetworkBits & NetworkMaskBits) == NetworkBits;
-    }
-
-    public override bool Equals(object? obj)
-    {
-        if (obj == null)
-            return false;
-
-        if (GetType() != obj.GetType())
-            return false;
-
-        var network = (NetworkPrefix)obj;
-        return network.Address.Equals(Address) && network.Length == Length;
-    }
-
-
-    /// <summary>
-    ///     Returns a new <c>NetworkPrefix</c> that covers both this <c>NetworkPrefix</c> and the <paramref name="networkPrefix" />
-    /// </summary>
-    /// <param name="networkPrefix"></param>
-    /// <returns></returns>
-    public NetworkPrefix GetContainingNetwork(NetworkPrefix networkPrefix)
-    {
-        return GetContainingNetwork(this, networkPrefix);
-    }
-
-
-    /// <summary>
-    ///     Computes the smallest <c>NetworkPrefix</c> that contains both <c>NetworkPrefix</c>
-    /// </summary>
-    /// <param name="network1"></param>
-    /// <param name="network2"></param>
-    /// <returns></returns>
-    /// <exception cref="ArgumentException">Thrown if the networks are not from the same address family</exception>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static NetworkPrefix GetContainingNetwork(NetworkPrefix network1, NetworkPrefix network2)
-    {
-        // ensure the network types are the same
-        if (network1.Version != network2.Version)
-            throw new ArgumentException("Networks must be from the same address family");
-
-        // special case: if either network has a prefix of 0, then the only network that can contain it is 0.0.0.0/0
-        if (network1.Length == 0 || network2.Length == 0)
-            return new NetworkPrefix(IPAddress.None, 0);
-
-        // figure out the most specific prefix that includes both networks
-
-        // first XOR the two networks together
-        // the parts that are different will be set to '1', for example
-        // 10.20.30.1 00001010.00010100.00011110.00000001
-        // 10.20.30.2 00001010.00010100.00011110.00000010
-        //            00000000.00000000.00000000.00000011
-        var mostSignificantBit = network1.NetworkBits ^ network2.NetworkBits;
-
-        // if there are no significant bits then the network is completely contained by the network with the smaller prefix
-        if (mostSignificantBit == 0)
-            return network1.Length < network2.Length ? network1 : network2;
-
-        // in the above example the split needs to occur at prefix 31
-        // which is the most specific set bit
-        // the position of the set bit dictates the new prefix
-
-        // start checking for set bits at the larger of the smaller of the two networks prefix
-        var bitPosition = 0; //network1.Prefix > network2.Prefix ? network1.Prefix : network2.Prefix;
-        while (mostSignificantBit >> bitPosition > UInt128.One)
-            bitPosition++;
-
-        var newPrefix = network2.AddressLength - bitPosition - 1;
-
-        // when one network contains the other the differing bit sits inside the host portion of the less specific network,
-        // which produces a prefix that is too specific to cover it, so the result is never allowed to be
-        // more specific than the less specific of the two networks
-        var containingPrefix = Math.Min(newPrefix, Math.Min(network1.Length, network2.Length));
-
-        return new NetworkPrefix(network1.Address, containingPrefix);
-    }
-
-    /// <summary>
-    ///     Computes the smallest <c>NetworkPrefix</c> that contains all of the <c>NetworkPrefix</c>. The resulting <c>NetworkPrefix</c> may contain additional
-    ///     address space.
-    /// </summary>
-    /// <param name="ipNetworks">List of networks</param>
-    /// <returns>The network which contains all of the supplied networks.</returns>
-    /// <exception cref="NotImplementedException"></exception>
-    /// <exception cref="ArgumentException"></exception>
-    public static NetworkPrefix GetContainingNetwork(IEnumerable<NetworkPrefix> ipNetworks)
-    {
-        NetworkPrefix? containingNetwork = null;
-        foreach (var ipNetwork in ipNetworks)
-        {
-            if (containingNetwork == null)
-            {
-                containingNetwork = ipNetwork;
-                continue;
-            }
-
-            containingNetwork = GetContainingNetwork(containingNetwork, ipNetwork);
-        }
-
-        if (containingNetwork == null)
-            throw new ArgumentNullException();
-
-        return containingNetwork;
-    }
-
-
-    public override int GetHashCode()
-    {
-        var hashCode = new HashCode();
-
-        hashCode.Add(Length);
-        hashCode.AddBytes(Address.GetAddressBytes());
-
-        return hashCode.ToHashCode();
-    }
-
-    /// <summary>
-    ///     Returns an enumerator for all host addresses
-    /// </summary>
-    /// <returns></returns>
-    public IEnumerable<IPAddress> Hosts()
-    {
-        UInt128 startAddress;
-        UInt128 endAddress;
-
-        if (Length == AddressLength) // /32 and /128 are host addresses
-        {
-            startAddress = NetworkBits;
-            endAddress = NetworkBits;
-        }
-        else if (Length == AddressLength - 1) // /31 and /127 are point to point addresses
-        {
-            startAddress = NetworkBits;
-            endAddress = NetworkBits + UInt128.One;
-        }
-        else
-        {
-            startAddress = NetworkBits + 1;
-            endAddress = NetworkBits ^ (HostMaskBits - 1); // BUG: is this correct?
-        }
-
-        for (var i = startAddress; i <= endAddress; i++)
-            yield return UInt128ToIpAddress(i);
-    }
-
-    /// <summary>
-    ///     Increments this <c>NetworkPrefix</c>
-    ///     <param name="valueToAdd" />
-    ///     to the
-    /// </summary>
-    /// <param name="networkPrefix">The <c>NetworkPrefix</c> to add to</param>
-    /// <param name="valueToAdd">The number of <c>NetworkPrefix</c> to add</param>
-    /// <returns></returns>
-    /// <exception cref="ArgumentOutOfRangeException">
-    ///     Thrown when it is not possible to add the <paramref name="valueToAdd" />
-    ///     to the <paramref name="networkPrefix" />
-    /// </exception>
-    public static NetworkPrefix operator +(NetworkPrefix networkPrefix, UInt128 valueToAdd)
-    {
-        try
-        {
-            checked
-            {
-                var addressesPerNetwork = UInt128.One << (networkPrefix.AddressLength - networkPrefix.Length);
-                var addressesToAdd = addressesPerNetwork * valueToAdd;
-                var networkBits = networkPrefix.NetworkBits + addressesToAdd;
-
-                if (networkPrefix.Version == IPVersion.IPv4 && networkBits > Ipv4NetworkMaskBits[networkPrefix.Length])
-                    throw new ArgumentOutOfRangeException();
-
-                if (networkPrefix.Version == IPVersion.IPv6 && networkBits > Ipv6NetworkMaskBits[networkPrefix.Length])
-                    throw new ArgumentOutOfRangeException();
-
-                var ipAddress = networkBits.ToIpAddress(networkPrefix.Version);
-                var newNetwork = new NetworkPrefix(ipAddress, networkPrefix.Length);
-
-                return newNetwork;
-            }
-        }
-        catch (OverflowException)
-        {
-            throw new ArgumentOutOfRangeException();
-        }
-    }
-
-    public static bool operator ==(NetworkPrefix? network1, NetworkPrefix? network2)
-    {
-        if (ReferenceEquals(network1, null) && ReferenceEquals(network2, null))
-            return true;
-
-        if (ReferenceEquals(network1, null) || ReferenceEquals(network2, null))
-            return false;
-
-        return network1.Address.Equals(network2.Address) && network1.Length == network2.Length;
-    }
-
-    public static bool operator >(NetworkPrefix network1, NetworkPrefix network2)
-    {
-        // ipv6 is greater then ipv4
-        if (network1.Version != network2.Version)
-            return network2.Version == IPVersion.IPv4;
-
-        // if both side have the same network bits, then the one with the biggest mask is greater 
-        if (network1.NetworkBits == network2.NetworkBits)
-            return network1.Length > network2.Length;
-
-        // otherwise the one with the biggest network is biggest
-        return network1.NetworkBits > network2.NetworkBits;
-    }
-
-    public static implicit operator NetworkPrefix(string value)
-    {
-        return Parse(value);
-    }
-
-    public static implicit operator string(NetworkPrefix value)
-    {
-        return value.ToString();
-    }
-
-    public static bool operator !=(NetworkPrefix network1, NetworkPrefix network2)
-    {
-        return !(network1 == network2);
-    }
-
-    public static bool operator <(NetworkPrefix network1, NetworkPrefix network2)
-    {
-        // ipv4 is less then ipv6
-        if (network1.Version != network2.Version)
-            return network1.Version == IPVersion.IPv4;
-
-        // if both side have the same network bits, then the one with the smallest mask is smaller 
-        if (network1.NetworkBits == network2.NetworkBits)
-            return network1.Length < network2.Length;
-
-        // otherwise the one with the smallest network is smallest
-        return network1.NetworkBits < network2.NetworkBits;
-    }
-
-    public static NetworkPrefix operator -(NetworkPrefix networkPrefix, UInt128 valueToSubtract)
-    {
-        try
-        {
-            checked
-            {
-                var addressesPerNetwork = UInt128.One << (networkPrefix.AddressLength - networkPrefix.Length);
-                var addressToSubtract = addressesPerNetwork * valueToSubtract;
-                var networkBits = networkPrefix.NetworkBits - addressToSubtract;
-
-                if (networkPrefix.Version == IPVersion.IPv4 && networkBits > Ipv4NetworkMaskBits[networkPrefix.Length])
-                    throw new ArgumentOutOfRangeException();
-
-                if (networkPrefix.Version == IPVersion.IPv6 && networkBits > Ipv6NetworkMaskBits[networkPrefix.Length])
-                    throw new ArgumentOutOfRangeException();
-
-                var ipAddress = networkBits.ToIpAddress(networkPrefix.Version);
-                var newNetwork = new NetworkPrefix(ipAddress, networkPrefix.Length);
-
-                return newNetwork;
-            }
-        }
-        catch (OverflowException)
-        {
-            throw new ArgumentOutOfRangeException();
-        }
-    }
-
-    /// <summary>
-    ///     Parses a string to a <c>NetworkPrefix</c> object
-    /// </summary>
-    /// <param name="ipNetworkString">
-    ///     A string that represents a <c>NetworkPrefix</c> The following formats are supported:10.0.0.0/24, myhost/24, 10.0.0.10, 10.0.0.0 255.255.255.0, myhost.mydomain.org 255.255.255.0, myhost
-    /// </param>
-    /// <returns>The parsed <c>NetworkPrefix</c> object</returns>
-    public static NetworkPrefix Parse(string ipNetworkString)
-    {
-        if (TryParse(ipNetworkString, out var network))
-            return network;
-
-        throw new FormatException("Address is malformed");
-    }
-
-
-    public List<NetworkPrefix> RemoveNetwork(NetworkPrefix networkPrefixToRemove)
-    {
-        if (networkPrefixToRemove.Contains(this))
-            throw new ArgumentException("The network to remove contains the network");
-
-        if (this == networkPrefixToRemove)
-            throw new ArgumentException("The network to remove and the network are the same");
-
-        if (!Contains(networkPrefixToRemove))
-            throw new ArgumentException("The network to remove is not contained by this network");
-
-        var results = RemoveNetwork(new List<NetworkPrefix>(new[] { this }), networkPrefixToRemove);
-        return results;
-    }
-
-    /// <summary>
-    ///     Splits this <c>NetworkPrefix</c> into two equal <c>NetworkPrefix</c> objects.
-    /// </summary>
-    /// <returns></returns>
-    /// <exception cref="InvalidOperationException">Insufficient number network bits to perform the split</exception>
-    public IEnumerable<NetworkPrefix> Split()
-    {
-        return Split(Length + 1);
-    }
-
-    /// <summary>
-    ///     Splits this <c>NetworkPrefix</c> into two equal <c>NetworkPrefix</c> objects.
-    /// </summary>
-    /// <returns></returns>
-    /// <exception cref="InvalidOperationException">Insufficient number network bits to perform the split</exception>
-    public IEnumerable<NetworkPrefix> Split(int prefixLength)
-    {
-        // the target has to be more specific than this network, and can be no more specific than a host prefix
-        if (prefixLength <= Length || prefixLength > AddressLength)
-            throw new InvalidOperationException($"The split target for {this} of {Address}/{prefixLength} is not valid");
-
-        var sizeOfNewNetworks = UInt128.One << (AddressLength - prefixLength);
-        var numberOfNewNetworks = UInt128.One << (prefixLength - Length);
-
-        var currentNetworkBits = NetworkBits;
-        for (UInt128 i = 0; i < numberOfNewNetworks; i++)
-        {
-            var networkAddress = UInt128ToIpAddress(currentNetworkBits);
-            var network = new NetworkPrefix(networkAddress, prefixLength);
-
-            yield return network;
-
-            currentNetworkBits += sizeOfNewNetworks;
-        }
-    }
-
-    /// <summary>
-    ///     Summarizes a list of <c>NetworkPrefix</c> such that the returned <c>NetworkPrefix</c> represents a compact and equivalent representation of
-    ///     the original <c>NetworkPrefix</c>.
-    /// </summary>
-    /// <param name="networks">List of networks to summarize</param>
-    /// <returns>A summarized, compact, and equivalent form of the original <c>NetworkPrefix</c></returns>
-    public static IEnumerable<NetworkPrefix> Summarize(IEnumerable<NetworkPrefix> networks)
-    {
-        // create a lookup dictionary by prefix
-        var networksByPrefix = new Dictionary<int, Dictionary<IPAddress, NetworkPrefix>>();
-
-        // create a new, empty, bucket for each possible prefix
-        for (var i = 0; i <= 128; i++)
-            networksByPrefix.Add(i, new Dictionary<IPAddress, NetworkPrefix>());
-
-        // add each network to the lookup by prefix
-        foreach (var network in networks)
-            networksByPrefix[network.Length].Add(network.Address, network);
-
-        // go through each possible prefix, starting with the largest prefix
-        for (var prefixLength = 128; prefixLength > 0; prefixLength--)
-
-            // iterate over each network at a given prefix
-            foreach (var network in networksByPrefix[prefixLength].ToArray())
-            {
-                // network could have been previously removed
-                // if the network no longer exists, skip this network
-                if (!networksByPrefix[prefixLength].Contains(network))
-                    continue;
-
-                // check to see if the complementary network exists
-                // if the complementary network does not exist, then this network cannot be summarized
-                var complementaryNetwork = network.Value.ComplementaryPrefix;
-                if (!networksByPrefix[prefixLength].TryGetValue(complementaryNetwork.Address, out var complementaryX))
-                    continue;
-
-                // both halves of the less specific network exist
-                // merge the two more specific halves into the more specific version
-                // by replacing the two more specific networks with a new, less specific network
-                // BUG: this assumes that there is no overlap...
-                var summarizedNetwork = new NetworkPrefix(network.Key, prefixLength - 1);
-
-                // BUG: Index out of bounds?
-                // add the new summarized network
-                networksByPrefix[prefixLength - 1].Add(summarizedNetwork.Address, summarizedNetwork);
-
-                // remove the two more specific haves of the summarized network that are now covered by the new summarized network
-                networksByPrefix[prefixLength].Remove(network.Key);
-                networksByPrefix[prefixLength].Remove(complementaryNetwork.Address);
-            }
-
-        // return each network in the network lookup table
-        foreach (var ipNetworks in networksByPrefix.Values)
-        foreach (var ipNetwork in ipNetworks)
-            yield return ipNetwork.Value;
-    }
-
-    public override string ToString()
-    {
-        return ToString(NetworkFormat.AddressAndPrefix);
-    }
-
-    public string ToString(NetworkFormat format)
-    {
-        switch (format)
-        {
-            case NetworkFormat.AddressAndPrefix:
-                return $"{Address}/{Length}";
-
-            case NetworkFormat.AddressAndMask:
-                return $"{Address} {Mask}";
-
-            case NetworkFormat.Mask:
-                return $"{Mask}";
-
-            case NetworkFormat.Address:
-                return $"{Address}";
-
-            case NetworkFormat.Detail:
-            {
-                var sb = new StringBuilder();
-
-                var networkProperty = new List<(string Field, string Value, string Bits)>();
-                networkProperty.Add(new ValueTuple<string, string, string>("Address:", Address.ToString(), BitsToString(NetworkBits)));
-                networkProperty.Add(new ValueTuple<string, string, string>("Mask:", Mask.ToString(), BitsToString(NetworkMaskBits)));
-                networkProperty.Add(new ValueTuple<string, string, string>("Wildcard:", Wildcard.ToString(), BitsToString(Wildcard)));
-                networkProperty.Add(new ValueTuple<string, string, string>("Broadcast:", Broadcast.ToString(), BitsToString(Broadcast)));
-
-                if (Length > 0)
-                {
-                    networkProperty.Add(new ValueTuple<string, string, string>("First Host:", FirstHost.ToString(), BitsToString(FirstHost)));
-                    networkProperty.Add(new ValueTuple<string, string, string>("Last Host:", LastHost.ToString(), BitsToString(LastHost)));
-                }
-
-                networkProperty.Add(new ValueTuple<string, string, string>("Hosts/Net:", TotalHosts.ToString("0,0", CultureInfo.InvariantCulture), ""));
-
-                var column = new int[3];
-                foreach (var (field, value, bits) in networkProperty)
-                {
-                    if (field.Length > column[0])
-                        column[0] = field.Length;
-
-                    if (value.Length > column[1])
-                        column[1] = value.Length;
-
-                    if (bits.Length > column[2])
-                        column[2] = bits.Length;
-                }
-
-                foreach (var (field, value, bits) in networkProperty)
-                    sb.AppendLine($"{field.PadRight(column[0])} {value.PadRight(column[1])}  {bits.PadRight(column[2])}".TrimEnd());
-
-                return sb.ToString();
-            }
-            default:
-                throw new ArgumentOutOfRangeException();
-        }
-    }
-
-    /// <summary>
-    ///     Attempts to parse a string to a <c>NetworkPrefix</c> object
-    /// </summary>
-    /// <param name="ipNetworkString">
-    ///     A string that represents a network. The following formats are supported:10.0.0.0/24, myhost/24, 10.0.0.10, 10.0.0.0
-    ///     255.255.255.0, myhost.mydomain.org 255.255.255.0, myhost
-    /// </param>
-    /// <param name="network"></param>
-    /// <returns>True if the network was successfully parsed, otherwise false</returns>
-    public static bool TryParse(string ipNetworkString, [NotNullWhen(true)] out NetworkPrefix? network)
-    {
-        if (TryParse(ipNetworkString, out var networkAddress, out var addressLength))
-        {
-            network = new NetworkPrefix(networkAddress, addressLength);
-            return true;
-        }
-
-        network = default;
-        return false;
-    }
-
-    // should these helper functions be somewhere else
-    private string BitsToString(IPAddress value)
-    {
-        return BitsToString(value.ToUInt128());
-    }
-
-    private string BitsToString(UInt128 value)
-    {
-        var sb = new StringBuilder();
-
-        for (var i = AddressLength - 1; i >= 0; i--)
-        {
-            if ((value & (UInt128.One << i)) > UInt128.Zero)
-                sb.Append('1');
-            else
-                sb.Append('0');
-
-            if (Version == IPVersion.IPv4 && i % 8 == 0 && i > 0)
-                sb.Append('.');
-            else if (Version == IPVersion.IPv6 && i % 16 == 0 && i > 0)
-                sb.Append(':'); // BUG: Does this work correctly with IPv6?
-        }
-
-        return sb.ToString();
-    }
-
-    private static int GetHostAddressPrefix(IPAddress ipAddress)
-    {
-        return ipAddress.AddressFamily switch
-        {
-            AddressFamily.InterNetwork => 32,
-            AddressFamily.InterNetworkV6 => 128,
-            _ => -1
-        };
-    }
-
-    private static int GetPrefix(IPAddress mask)
-    {
-        if (IpNetworkMaskToPrefix.TryGetValue(mask, out var maskLength))
-            return maskLength;
-
-        throw new ArgumentOutOfRangeException(nameof(mask), $"Invalid subnet mask: {mask}");
-    }
-
-    private static List<NetworkPrefix> RemoveNetwork(List<NetworkPrefix> listOfNetworks, NetworkPrefix networkPrefixToRemove)
-    {
-        // TODO: Handle if the networktoremove overlaps a network on the listofnetworks.
-        // TODO: could handle it by disallowing overlapping networks
-        // BUG: If you try to remove a network that is not contained, but has the same mask, you get a stack overflow (172.16.0.0/16 and 172.1.0.0/16 for example...
-
-        if (listOfNetworks.Contains(networkPrefixToRemove))
-        {
-            listOfNetworks.Remove(networkPrefixToRemove);
-            return listOfNetworks;
-        }
-
-        foreach (var network in listOfNetworks)
-        {
-            if (!network.Contains(networkPrefixToRemove))
-                continue;
-
-            listOfNetworks.AddRange(network.Split());
-            listOfNetworks.Remove(network);
-            break;
-        }
-
-        return RemoveNetwork(listOfNetworks, networkPrefixToRemove);
-    }
-
-    private void SetNetworkValues(IPAddress ipAddress, int prefix)
-    {
-        if (ipAddress.AddressFamily != AddressFamily.InterNetwork && ipAddress.AddressFamily != AddressFamily.InterNetworkV6)
-            throw new NotSupportedException($"Non-IPv4 or IPv6 addresses are not supported. The specified address family is {ipAddress.AddressFamily}");
-
-        if (ipAddress.AddressFamily == AddressFamily.InterNetwork && prefix > 32)
-            throw new ArgumentOutOfRangeException(nameof(prefix), "Maximum mask length of a IPv4 address is 32");
-
-        if (ipAddress.AddressFamily == AddressFamily.InterNetworkV6 && prefix > 128)
-            throw new ArgumentOutOfRangeException(nameof(prefix), "Maximum mask length of a IPv6 address is 128");
-
-        Address = ipAddress;
-        Length = prefix;
-
-        Version = ipAddress.AddressFamily switch
-        {
-            AddressFamily.InterNetwork => IPVersion.IPv4,
-            AddressFamily.InterNetworkV6 => IPVersion.IPv6,
-            _ => throw new ArgumentOutOfRangeException()
-        };
-
-        NetworkMaskBits = Version switch
-        {
-            IPVersion.IPv4 => Ipv4NetworkMaskBits[Length],
-            IPVersion.IPv6 => Ipv6NetworkMaskBits[Length],
-            _ => throw new ArgumentOutOfRangeException()
-        };
-
-        HostMaskBits = Version switch
-        {
-            IPVersion.IPv4 => Ipv4HostMaskBits[Length],
-            IPVersion.IPv6 => Ipv6HostMaskBits[Length],
-            _ => throw new ArgumentOutOfRangeException()
-        };
-
-        // truncate the network address
-        // for example 10.1.2.3/8 becomes 10.0.0.0/8
-        NetworkBits = ipAddress.ToUInt128() & NetworkMaskBits;
-        Address = UInt128ToIpAddress(NetworkBits);
-
-        AddressLength = Version switch
-        {
-            IPVersion.IPv4 => 32,
-            IPVersion.IPv6 => 128,
-            _ => throw new ArgumentOutOfRangeException()
-        };
-    }
-
-    private static bool TryParse(string ipNetworkString, out IPAddress? networkAddress, out ushort addressLength)
-    {
-        networkAddress = default;
-        addressLength = default;
-
-        var networkParts = ipNetworkString.Split(' ', '/');
-
-        if (networkParts.Length is 0 or > 3)
-            return false;
-
-        if (!IPAddress.TryParse(networkParts[0], out var networkPart))
-        {
-            // BUG: this can throw if it fails to resolve the name...
-            IPAddress[] hostAddresses;
-
-            try
-            {
-                // Dns.GetHostAddresses will throw on failure and there is no TryGetHostAddresses version
-                hostAddresses = Dns.GetHostAddresses(networkParts[0]);
-                if (hostAddresses.Length == 0)
-                    return false;
-            }
-            catch
-            {
-                return false;
-            }
-
-            networkPart = hostAddresses[0];
-        }
-
-        var prefixLength = 0;
-        IPAddress? maskAddress = null;
-
-        switch (networkParts.Length)
-        {
-            case 1:
-                switch (networkPart.AddressFamily)
-                {
-                    case AddressFamily.InterNetwork:
-                        prefixLength = 32;
-                        break;
-                    case AddressFamily.InterNetworkV6:
-                        prefixLength = 128;
-                        break;
-                    default:
-                        return false;
-                }
-
-                break;
-            case 2:
-                if (!int.TryParse(networkParts[1], out prefixLength))
-                    if (!IPAddress.TryParse(networkParts[1], out maskAddress))
-                        return false;
-
-                break;
-        }
-
-        networkAddress = networkPart;
-        if (maskAddress != null)
-            addressLength = (ushort)GetPrefix(maskAddress);
-        else
-            addressLength = (ushort)prefixLength;
-
-        return true;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private IPAddress UInt128ToIpAddress(UInt128 addressBits)
-    {
-        return addressBits.ToIpAddress(Version);
-    }
-
+    /// <remarks>
+    ///     IPv4 prefixes sort before IPv6 prefixes. Within a version, prefixes sort by network address, and a shorter prefix sorts
+    ///     before a longer prefix with the same network address, so a network always sorts before the networks it contains.
+    ///     Every prefix sorts after <see langword="null" />.
+    /// </remarks>
+    /// <param name="other">The prefix to compare with.</param>
+    /// <returns>A negative number, zero, or a positive number when this prefix sorts before, the same as, or after <paramref name="other" />.</returns>
     public int CompareTo(NetworkPrefix? other)
     {
-        // by convention every instance sorts after null
-        if (ReferenceEquals(other, null))
+        if (other is null)
             return 1;
 
-        if (other == this)
-            return 0;
-
-        if (other > this)
-            return -1;
-
-        return 1;
+        return Compare(Version, NetworkAddressBits, PrefixLength, other.Version, other.NetworkAddressBits, other.PrefixLength);
     }
 
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public XmlSchema? GetSchema()
+    /// <summary>
+    ///     Determines whether this prefix is strictly contained by another prefix: it is a smaller network inside the other.
+    /// </summary>
+    /// <param name="other">The prefix that might contain this one.</param>
+    /// <returns><see langword="true" /> when <paramref name="other" /> contains this prefix and is not equal to it.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="other" /> is <see langword="null" />.</exception>
+    public bool ContainedBy(NetworkPrefix other)
     {
-        return null;
+        ArgumentNullException.ThrowIfNull(other);
+
+        return other.Contains(this);
     }
 
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public void ReadXml(XmlReader reader)
+    /// <summary>
+    ///     Determines whether this prefix is contained by another prefix or is equal to it.
+    /// </summary>
+    /// <param name="other">The prefix that might contain this one.</param>
+    /// <returns><see langword="true" /> when every address of this prefix is in <paramref name="other" />.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="other" /> is <see langword="null" />.</exception>
+    public bool ContainedByOrEqual(NetworkPrefix other)
     {
-        reader.MoveToContent();
+        ArgumentNullException.ThrowIfNull(other);
 
-        if (reader.IsEmptyElement)
-            throw new NullReferenceException();
-
-        reader.ReadStartElement();
-        var macAddressText = reader.ReadString();
-
-        if (TryParse(macAddressText, out var networkAddress, out var prefix))
-            SetNetworkValues(networkAddress, prefix);
-        else
-            throw new FormatException("Address is malformed");
-
-        reader.ReadEndElement();
+        return other.ContainsOrEqual(this);
     }
 
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    public void WriteXml(XmlWriter writer)
+    /// <summary>
+    ///     Determines whether an address is a member of this network.
+    /// </summary>
+    /// <remarks>
+    ///     A host prefix contains the single address that it represents. An address of the other IP version is never a member.
+    /// </remarks>
+    /// <param name="address">The address.</param>
+    /// <returns><see langword="true" /> when the address is in this network.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="address" /> is <see langword="null" />.</exception>
+    public bool Contains(IPAddress address)
     {
-        writer.WriteString(ToString());
+        ArgumentNullException.ThrowIfNull(address);
+
+        if (!AddressBits.TryGetVersion(address.AddressFamily, out var addressVersion) || addressVersion != Version)
+            return false;
+
+        // the address is a member when its network bits are the same as this network's address
+        return (AddressBits.FromIPAddress(address) & NetworkMaskBits) == NetworkAddressBits;
+    }
+
+    /// <summary>
+    ///     Determines whether this prefix strictly contains another prefix: the other is a smaller network inside this one.
+    /// </summary>
+    /// <remarks>
+    ///     A prefix does not strictly contain itself; use <see cref="ContainsOrEqual" /> to include that case. A prefix of the other
+    ///     IP version is never contained.
+    /// </remarks>
+    /// <param name="other">The prefix that might be contained.</param>
+    /// <returns><see langword="true" /> when this prefix contains <paramref name="other" /> and is not equal to it.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="other" /> is <see langword="null" />.</exception>
+    public bool Contains(NetworkPrefix other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        // a strictly contained network has a longer prefix, which rules out the equal case
+        return PrefixLength < other.PrefixLength && ContainsOrEqual(other);
+    }
+
+    /// <summary>
+    ///     Determines whether this prefix contains another prefix or is equal to it.
+    /// </summary>
+    /// <remarks>
+    ///     A prefix of the other IP version is never contained.
+    /// </remarks>
+    /// <param name="other">The prefix that might be contained.</param>
+    /// <returns><see langword="true" /> when every address of <paramref name="other" /> is in this prefix.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="other" /> is <see langword="null" />.</exception>
+    public bool ContainsOrEqual(NetworkPrefix other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        if (Version != other.Version)
+            return false;
+
+        // a network can't contain a network that is bigger than it is
+        if (PrefixLength > other.PrefixLength)
+            return false;
+
+        // the other network is inside this one when its address, cut down to this network's prefix length, is this network's address
+        return (other.NetworkAddressBits & NetworkMaskBits) == NetworkAddressBits;
+    }
+
+    /// <summary>
+    ///     Determines whether this prefix is equal to another prefix: both have the same IP version, network address and prefix length.
+    /// </summary>
+    /// <param name="other">The prefix to compare with.</param>
+    /// <returns><see langword="true" /> when the prefixes are equal.</returns>
+    public bool Equals(NetworkPrefix? other)
+    {
+        if (other is null)
+            return false;
+
+        if (ReferenceEquals(this, other))
+            return true;
+
+        return Version == other.Version && PrefixLength == other.PrefixLength && NetworkAddressBits == other.NetworkAddressBits;
+    }
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj)
+    {
+        return Equals(obj as NetworkPrefix);
+    }
+
+    /// <summary>
+    ///     Creates a prefix with the same network address and prefix length as an <see cref="IPNetwork" />.
+    /// </summary>
+    /// <param name="network">The network to copy.</param>
+    /// <returns>A new prefix.</returns>
+    public static NetworkPrefix FromIPNetwork(IPNetwork network)
+    {
+        return new NetworkPrefix(network);
+    }
+
+    /// <inheritdoc />
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Version, PrefixLength, NetworkAddressBits);
+    }
+
+    /// <summary>
+    ///     Determines whether this prefix and another prefix share at least one address, which happens when one contains or
+    ///     is equal to the other.
+    /// </summary>
+    /// <param name="other">The other prefix.</param>
+    /// <returns><see langword="true" /> when the two prefixes overlap.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="other" /> is <see langword="null" />.</exception>
+    public bool Overlaps(NetworkPrefix other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        // two prefixes can't partly overlap; either they are disjoint, or one of them lies entirely within the other
+        return ContainsOrEqual(other) || other.ContainsOrEqual(this);
+    }
+
+    /// <summary>
+    ///     Creates an <see cref="IPNetwork" /> with the same network address and prefix length as this prefix.
+    /// </summary>
+    /// <returns>A new <see cref="IPNetwork" />.</returns>
+    public IPNetwork ToIPNetwork()
+    {
+        return new IPNetwork(NetworkAddress, PrefixLength);
+    }
+
+    /// <summary>
+    ///     Compares two prefixes, given as their parts, to determine their sort order. See <see cref="CompareTo(NetworkPrefix)" />.
+    /// </summary>
+    /// <param name="firstVersion">The IP version of the first prefix.</param>
+    /// <param name="firstAddressBits">The network address of the first prefix in integer form.</param>
+    /// <param name="firstPrefixLength">The prefix length of the first prefix.</param>
+    /// <param name="secondVersion">The IP version of the second prefix.</param>
+    /// <param name="secondAddressBits">The network address of the second prefix in integer form.</param>
+    /// <param name="secondPrefixLength">The prefix length of the second prefix.</param>
+    /// <returns>A negative number, zero, or a positive number when the first prefix sorts before, the same as, or after the second.</returns>
+    internal static int Compare(IPVersion firstVersion, UInt128 firstAddressBits, int firstPrefixLength, IPVersion secondVersion, UInt128 secondAddressBits, int secondPrefixLength)
+    {
+        // IPv4 sorts before IPv6
+        var versionComparison = ((int)firstVersion).CompareTo((int)secondVersion);
+        if (versionComparison != 0)
+            return versionComparison;
+
+        // then the lower network address sorts first
+        var addressComparison = firstAddressBits.CompareTo(secondAddressBits);
+        if (addressComparison != 0)
+            return addressComparison;
+
+        // and when the network addresses are the same, the bigger network, with the shorter prefix, sorts first
+        return firstPrefixLength.CompareTo(secondPrefixLength);
+    }
+
+    /// <summary>
+    ///     Gets the IP version of an address that is used to create a prefix, and validates the address.
+    /// </summary>
+    /// <param name="address">The address.</param>
+    /// <param name="parameterName">The name of the parameter that holds the address, for the exception message.</param>
+    /// <returns>The IP version of the address.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="address" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="address" /> is neither an IPv4 nor an IPv6 address.</exception>
+    private static IPVersion GetVersionOf([NotNull] IPAddress? address, string parameterName)
+    {
+        ArgumentNullException.ThrowIfNull(address, parameterName);
+
+        if (!AddressBits.TryGetVersion(address.AddressFamily, out var version))
+            throw new ArgumentException($"Only IPv4 and IPv6 addresses are supported. The address family {address.AddressFamily} is not.", parameterName);
+
+        return version;
+    }
+
+    /// <summary>
+    ///     Sets every property of the prefix. This is called by every constructor, and by XML deserialization.
+    /// </summary>
+    /// <param name="addressBits">An address within the network, in integer form. Any host bits that are set are cleared.</param>
+    /// <param name="prefixLength">A prefix length that is valid for <paramref name="version" />.</param>
+    /// <param name="version">The IP version.</param>
+    [MemberNotNull(nameof(NetworkAddress))]
+    private void Initialize(UInt128 addressBits, int prefixLength, IPVersion version)
+    {
+        Version = version;
+        PrefixLength = prefixLength;
+        AddressBitLength = AddressBits.GetBitLength(version);
+        HostMaskBits = AddressBits.GetHostMaskBits(version, prefixLength);
+        NetworkMaskBits = AddressBits.GetNetworkMaskBits(version, prefixLength);
+
+        // clear the host bits so that the prefix always holds its network address; for example 10.1.2.3/8 becomes 10.0.0.0/8
+        NetworkAddressBits = addressBits & NetworkMaskBits;
+        NetworkAddress = ToIPAddress(NetworkAddressBits);
+    }
+
+    /// <summary>
+    ///     Gets the prefix length of a network mask.
+    /// </summary>
+    /// <param name="networkMask">The network mask.</param>
+    /// <param name="version">The IP version that the mask must have.</param>
+    /// <param name="prefixLength">When this method returns <see langword="true" />, the prefix length of the mask.</param>
+    /// <returns><see langword="true" /> when the mask is a valid network mask of the required IP version.</returns>
+    private static bool TryGetPrefixLength(IPAddress networkMask, IPVersion version, out int prefixLength)
+    {
+        // a mask of the other IP version does not apply to the address
+        if (!AddressBits.TryGetVersion(networkMask.AddressFamily, out var maskVersion) || maskVersion != version)
+        {
+            prefixLength = 0;
+            return false;
+        }
+
+        return AddressBits.TryGetPrefixLength(AddressBits.FromIPAddress(networkMask), version, out prefixLength);
+    }
+
+    /// <summary>
+    ///     Converts an address of this prefix's IP version from integer form to an <see cref="IPAddress" />.
+    /// </summary>
+    /// <param name="addressBits">The address in integer form.</param>
+    /// <returns>A new <see cref="IPAddress" />.</returns>
+    private IPAddress ToIPAddress(UInt128 addressBits)
+    {
+        return AddressBits.ToIPAddress(addressBits, Version);
     }
 }
