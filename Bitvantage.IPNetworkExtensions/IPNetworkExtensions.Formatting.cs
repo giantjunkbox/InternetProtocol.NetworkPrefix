@@ -28,6 +28,30 @@ public static partial class IPNetworkExtensions
     extension(IPNetwork network)
     {
         /// <summary>
+        ///     The name of the reverse DNS zone that holds the pointer records for the network, such as
+        ///     <c>0.0.10.in-addr.arpa</c> for <c>10.0.0.0/24</c>, or <c>8.b.d.0.1.0.0.2.ip6.arpa</c> for <c>2001:db8::/32</c>.
+        /// </summary>
+        /// <remarks>
+        ///     Reverse DNS names have one label for each byte of an IPv4 address and for each 4 bit digit of an IPv6 address, so a
+        ///     network has a zone of its own only when its prefix length is a multiple of 8 for IPv4, or of 4 for IPv6. For the
+        ///     pointer name of a single address, use the <c>ReversePointer</c> property of the address.
+        /// </remarks>
+        /// <exception cref="InvalidOperationException">Thrown when the prefix length does not end on a label boundary.</exception>
+        public string ReverseZone
+        {
+            get
+            {
+                var networkBits = NetworkBits.FromIPNetwork(network);
+                var labelBitLength = GetReverseLabelBitLength(networkBits.Version);
+
+                if (networkBits.PrefixLength % labelBitLength != 0)
+                    throw new InvalidOperationException($"{network} has no reverse DNS zone of its own, because a reverse zone needs a prefix length that is a multiple of {labelBitLength} for {networkBits.Version}. Split it into networks of the next multiple and use theirs.");
+
+                return FormatReverseName(networkBits);
+            }
+        }
+
+        /// <summary>
         ///     Writes the network in a chosen format.
         /// </summary>
         /// <param name="format">The format.</param>
@@ -45,10 +69,48 @@ public static partial class IPNetworkExtensions
                 NetworkFormat.AddressAndHostMask => $"{baseAddress} {networkBits.ToIPAddress(networkBits.HostMaskBits)}",
                 NetworkFormat.Address => baseAddress.ToString(),
                 NetworkFormat.Mask => networkBits.ToIPAddress(networkBits.NetworkMaskBits).ToString(),
+                NetworkFormat.HostMask => networkBits.ToIPAddress(networkBits.HostMaskBits).ToString(),
                 NetworkFormat.Detail => FormatDetail(networkBits),
                 _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
             };
         }
+    }
+
+    /// <summary>
+    ///     Writes the reverse DNS name of a network whose prefix length ends on a label boundary. For a host network this is the
+    ///     pointer name of its address.
+    /// </summary>
+    /// <param name="network">The network.</param>
+    /// <returns>The reverse DNS name, without a trailing dot.</returns>
+    internal static string FormatReverseName(NetworkBits network)
+    {
+        // a reverse name lists the labels of the network part from the last to the first: each byte in decimal under
+        // in-addr.arpa for IPv4, and each 4 bit digit in hexadecimal under ip6.arpa for IPv6
+        var labelBitLength = GetReverseLabelBitLength(network.Version);
+        var labelMask = (UInt128.One << labelBitLength) - UInt128.One;
+        var (labelFormat, zoneSuffix) = network.Version == IPVersion.IPv4 ? ("D", "in-addr.arpa") : ("x", "ip6.arpa");
+
+        var nameBuilder = new StringBuilder();
+        for (var labelIndex = network.PrefixLength / labelBitLength - 1; labelIndex >= 0; labelIndex--)
+        {
+            // label 0 is the most significant, so it sits furthest to the left in the address
+            var shiftToLabel = network.AddressBitLength - (labelIndex + 1) * labelBitLength;
+            var labelValue = (int)((network.BaseAddressBits >> shiftToLabel) & labelMask);
+
+            nameBuilder.Append(labelValue.ToString(labelFormat, CultureInfo.InvariantCulture)).Append('.');
+        }
+
+        return nameBuilder.Append(zoneSuffix).ToString();
+    }
+
+    /// <summary>
+    ///     Gets the number of address bits in each label of a reverse DNS name.
+    /// </summary>
+    /// <param name="version">The IP version.</param>
+    /// <returns>8 for IPv4, which has a label for each byte, or 4 for IPv6, which has a label for each hexadecimal digit.</returns>
+    private static int GetReverseLabelBitLength(IPVersion version)
+    {
+        return version == IPVersion.IPv4 ? 8 : 4;
     }
 
     /// <summary>

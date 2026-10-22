@@ -69,10 +69,14 @@ notes.
   only by `IPNetwork.Resolve` and `IPNetwork.ResolveAsync`.
 - Parsing accepts only the standard dotted-decimal form of an IPv4 address and mask. See the first fix below.
 - `Exclude` follows set semantics. It returns an empty list when the excluded network covers the whole network, and
-  the network itself when the two do not overlap, where `RemoveNetwork` threw in both cases.
+  the network itself when the two do not overlap, where `RemoveNetwork` threw in both cases. Its result is sorted,
+  where `RemoveNetwork` listed the largest network first.
 - `Summarize` returns the true minimal set: covered networks are dropped, and the result is sorted.
 - `Split(int)` throws `ArgumentOutOfRangeException` for an invalid target, and both `Split` overloads throw when they
-  are called rather than when the result is first enumerated.
+  are called rather than when the result is first enumerated. A target equal to the network's own prefix length
+  produces the network itself, where 2.0.0 threw, and `GetSupernet(int)` accepts its own prefix length the same way.
+- A mask that is not a network mask is read as a host mask, also called a wildcard mask, so `10.0.0.0 0.0.0.255`
+  parses as `10.0.0.0/24`. The all-zero and all-one masks remain network masks.
 - `ComplementaryNetwork` throws `InvalidOperationException` for a /0, rather than `ArgumentException`.
 - `FirstHost` and `LastHost` work for a /0, rather than throwing.
 - For IPv6, which has no broadcast address, `LastHost`, `Hosts()` and `TotalHosts` include the last address, and only
@@ -90,9 +94,28 @@ notes.
 - `Overlaps`, `GetSupernet()`, `GetSupernet(int)`, `LastAddress`, `HostBitLength`, `IsHostNetwork`, `FromAddress` and
   `FromMask`.
 - The `<=` and `>=` operators.
-- `NetworkFormat.AddressAndHostMask`, the address and wildcard form used by Cisco access control lists.
-- IPv6 allocations, which were all `Undefined`, and the `SharedAddressSpace`, `Documentation`, `Benchmarking` and
-  `Unspecified` allocations.
+- Address ranges: `IPNetwork.Summarize(firstAddress, lastAddress)` returns the fewest networks that cover a range, and
+  `IPNetwork.ParseRange` and `TryParseRange` read text such as `10.0.0.1-10.0.0.9`. `GetContainingNetwork` takes two
+  addresses as well as two networks.
+- Address planning: `Exclude` takes a set of networks to remove, the static `IPNetwork.Exclude` computes the set
+  difference of two sets, and `AvailableSubnets` lists the free subnets of a given length. `GetAddress` and `GetOffset`
+  convert between an address and its offset in a network.
+- `IPNetwork.FromHostMask`, `IPNetwork.GetNetworkMask` and `IPNetwork.GetHostMask`.
+- `NetworkFormat.AddressAndHostMask`, the address and wildcard form used by Cisco access control lists, and
+  `NetworkFormat.HostMask`.
+- `ReverseZone`, the reverse DNS zone of a network.
+- `ParseStrict` and `TryParseStrict` overloads for UTF-8 text, which `IPNetworkJsonConverter` uses to read values
+  without creating a string.
+- Extension members on `IPAddress`, in `IPAddressExtensions`: `ParseStrict` and `TryParseStrict` with the same IPv4
+  rules as for networks; `CompareTo`, `IPAddress.Comparer`, and the `<`, `>`, `<=`, `>=`, `+` and `-` operators;
+  `AddressBits` and `IPAddress.FromAddressBits`, the same integer form that networks use; `Allocation`, `Class` and
+  `Version`; `IsNetworkMask`, `IsHostMask` and `TryGetPrefixLength`; `Unmap`, which converts an IPv4-mapped IPv6 address
+  to IPv4 and leaves any other address alone; and `ReversePointer`, the reverse DNS name of an address.
+- IPv6 allocations, which were all `Undefined`, and the `SharedAddressSpace`, `Documentation`, `Benchmarking`,
+  `Unspecified`, `ProtocolAssignments`, `IPv4Translation`, `Discard`, `Dummy`, `Teredo`, `SixToFour`, `SiteLocal` and
+  `SegmentRouting` allocations. The table now follows the IANA IPv4 and IPv6 special-purpose address registries.
+- An IPv4-mapped IPv6 address or network, such as `::ffff:10.0.0.1`, which a dual-stack server reports for an IPv4
+  client, takes the allocation and class of the IPv4 address that it maps.
 - XML documentation for every public member.
 
 ### Fixed
@@ -117,6 +140,8 @@ notes.
 - `Split(128)` on `::/0` returned a single network, because the number of subnets, 2^128, overflowed.
 - `ToString(NetworkFormat.Detail)` showed a host count of `01` for a host network and `02` for a point-to-point
   network.
+- `Allocation` reported reserved blocks as `Global`, including `192.0.0.0/24`, `192.88.99.0/24`, `2001::/32` and
+  `2002::/16`, because every IPv4 address missing from the table defaulted to `Global`.
 
 ### Migration
 
@@ -133,6 +158,10 @@ notes.
 - If you relied on `Summarize` keeping covered networks, or on the order it returned, adjust for the sorted minimal
   result.
 - Expect IPv6 host ranges and counts to include the last address.
+- Expect `Exclude` results in sorted order, and a `Split(int)` or `GetSupernet(int)` target equal to the network's own
+  prefix length to return the network rather than throw.
+- Check code that relies on `Allocation` returning `Global` for the reserved blocks listed under Fixed, or `Undefined`
+  for IPv4-mapped addresses.
 
 ## [2.0.0] - 2026-08-19
 

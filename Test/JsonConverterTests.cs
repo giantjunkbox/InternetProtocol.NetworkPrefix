@@ -83,6 +83,14 @@ public class JsonConverterTests
     }
 
     [Test]
+    public void JsonConverter_07()
+    {
+        // a value with escape sequences is read through a string rather than from its raw bytes
+        Assert.That(JsonSerializer.Deserialize<IPNetwork>("\"\\u0031\\u0030.0.0.0/8\"", ConverterOptions), Is.EqualTo(Network("10.0.0.0/8")));
+        Assert.That(JsonSerializer.Deserialize<Dictionary<IPNetwork, int>>("{\"\\u0031\\u0030.0.0.0/8\":1}", ConverterOptions)?.Keys.Single(), Is.EqualTo(Network("10.0.0.0/8")));
+    }
+
+    [Test]
     public void JsonConverter_06()
     {
         // the converter can be applied to a single property instead of being registered

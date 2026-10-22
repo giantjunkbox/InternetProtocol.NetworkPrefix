@@ -65,6 +65,48 @@ public class ClassificationTests
     }
 
     [Test]
+    public void Allocation_IPv4_03()
+    {
+        // blocks from the IANA special-purpose registry, including globally reachable assignments inside reserved blocks
+        Assert.That(Network("192.0.0.0/24").Allocation, Is.EqualTo(AddressAllocation.ProtocolAssignments));
+        Assert.That(Network("192.0.0.170").Allocation, Is.EqualTo(AddressAllocation.ProtocolAssignments));
+        Assert.That(Network("192.0.0.9").Allocation, Is.EqualTo(AddressAllocation.Global));
+        Assert.That(Network("192.0.0.10").Allocation, Is.EqualTo(AddressAllocation.Global));
+        Assert.That(Network("192.0.0.8").Allocation, Is.EqualTo(AddressAllocation.Dummy));
+        Assert.That(Network("192.88.99.0/24").Allocation, Is.EqualTo(AddressAllocation.SixToFour));
+        Assert.That(Network("192.31.196.0/24").Allocation, Is.EqualTo(AddressAllocation.Global));
+    }
+
+    [Test]
+    public void Allocation_IPv6_02()
+    {
+        Assert.That(Network("2001::/23").Allocation, Is.EqualTo(AddressAllocation.ProtocolAssignments));
+        Assert.That(Network("2001::/32").Allocation, Is.EqualTo(AddressAllocation.Teredo));
+        Assert.That(Network("2001:1::1").Allocation, Is.EqualTo(AddressAllocation.Global));
+        Assert.That(Network("2001:20::/28").Allocation, Is.EqualTo(AddressAllocation.Global));
+        Assert.That(Network("2002::/16").Allocation, Is.EqualTo(AddressAllocation.SixToFour));
+        Assert.That(Network("64:ff9b::/96").Allocation, Is.EqualTo(AddressAllocation.IPv4Translation));
+        Assert.That(Network("64:ff9b::a00:1").Allocation, Is.EqualTo(AddressAllocation.IPv4Translation));
+        Assert.That(Network("100::/64").Allocation, Is.EqualTo(AddressAllocation.Discard));
+        Assert.That(Network("100:0:0:1::/64").Allocation, Is.EqualTo(AddressAllocation.Dummy));
+        Assert.That(Network("fec0::/10").Allocation, Is.EqualTo(AddressAllocation.SiteLocal));
+        Assert.That(Network("5f00::/16").Allocation, Is.EqualTo(AddressAllocation.SegmentRouting));
+    }
+
+    [Test]
+    public void Allocation_IPv6_03()
+    {
+        // an IPv4-mapped network is classified as the IPv4 network it maps, which is how a dual-stack server reports IPv4 clients
+        Assert.That(Network("::ffff:10.0.0.1").Allocation, Is.EqualTo(AddressAllocation.Private));
+        Assert.That(Network("::ffff:8.8.8.8").Allocation, Is.EqualTo(AddressAllocation.Global));
+        Assert.That(Network("::ffff:10.0.0.0/104").Allocation, Is.EqualTo(AddressAllocation.Private));
+        Assert.That(Network("::ffff:10.0.0.0/104").Class, Is.EqualTo(NetworkClass.A));
+
+        // the whole mapped block covers every IPv4 address, so it has no single allocation
+        Assert.That(Network("::ffff:0:0/96").Allocation, Is.EqualTo(AddressAllocation.Undefined));
+    }
+
+    [Test]
     public void Class_IPv4_01()
     {
         Assert.That(Network("10.20.30.0/24").Class, Is.EqualTo(NetworkClass.A));

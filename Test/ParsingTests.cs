@@ -49,6 +49,79 @@ public class ParsingTests
     }
 
     [Test]
+    public void FromHostMask_01()
+    {
+        var address = Address("10.1.2.3");
+
+        Assert.That(IPNetwork.FromHostMask(address, Address("0.0.0.255")), Is.EqualTo(Network("10.1.2.0/24")));
+
+        // as a host mask, all zeros is a host network and all ones is every address
+        Assert.That(IPNetwork.FromHostMask(address, Address("0.0.0.0")), Is.EqualTo(Network("10.1.2.3/32")));
+        Assert.That(IPNetwork.FromHostMask(address, Address("255.255.255.255")), Is.EqualTo(Network("0.0.0.0/0")));
+
+        Assert.Throws<ArgumentException>(() => IPNetwork.FromHostMask(address, Address("0.0.255.0")));
+        Assert.Throws<ArgumentException>(() => IPNetwork.FromHostMask(address, Address("::ff")));
+        Assert.Throws<ArgumentNullException>(() => IPNetwork.FromHostMask(address, null!));
+    }
+
+    [Test]
+    public void GetMask_01()
+    {
+        Assert.That(IPNetwork.GetNetworkMask(IPVersion.IPv4, 24), Is.EqualTo(Address("255.255.255.0")));
+        Assert.That(IPNetwork.GetHostMask(IPVersion.IPv4, 24), Is.EqualTo(Address("0.0.0.255")));
+        Assert.That(IPNetwork.GetNetworkMask(IPVersion.IPv6, 32), Is.EqualTo(Address("ffff:ffff::")));
+        Assert.That(IPNetwork.GetHostMask(IPVersion.IPv6, 128), Is.EqualTo(Address("::")));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => IPNetwork.GetNetworkMask(IPVersion.IPv4, 33));
+        Assert.Throws<ArgumentOutOfRangeException>(() => IPNetwork.GetNetworkMask(IPVersion.IPv4, -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => IPNetwork.GetHostMask(IPVersion.Undefined, 0));
+    }
+
+    [Test]
+    public void Parse_HostMask_01()
+    {
+        // a mask that is not a network mask is read as a host mask, which is the form Cisco access control lists use
+        Assert.That(IPNetwork.ParseStrict("10.0.0.0 0.0.0.255"), Is.EqualTo(Network("10.0.0.0/24")));
+        Assert.That(IPNetwork.ParseStrict("10.0.0.0/0.0.0.255"), Is.EqualTo(Network("10.0.0.0/24")));
+        Assert.That(IPNetwork.ParseStrict("2001:db8:: ::ffff:ffff:ffff:ffff:ffff:ffff"), Is.EqualTo(Network("2001:db8::/32")));
+        Assert.That(IPNetwork.TryParseStrict("10.0.0.0 0.0.255.0", out _), Is.False);
+
+        // the all-zero and all-one masks are network masks
+        Assert.That(IPNetwork.ParseStrict("10.0.0.0 0.0.0.0"), Is.EqualTo(Network("0.0.0.0/0")));
+        Assert.That(IPNetwork.ParseStrict("10.0.0.1 255.255.255.255"), Is.EqualTo(Network("10.0.0.1/32")));
+    }
+
+    [Test]
+    public void Parse_HostMask_02()
+    {
+        // a network written with its host mask parses back to the same network, except a /0 or /32, whose host masks are
+        // also network masks
+        for (var prefixLength = 1; prefixLength <= 31; prefixLength++)
+        {
+            var network = new IPNetwork(Address("10.20.30.40"), prefixLength);
+            Assert.That(IPNetwork.ParseStrict(network.ToString(NetworkFormat.AddressAndHostMask)), Is.EqualTo(network), network.ToString());
+        }
+
+        Assert.That(IPNetwork.ParseStrict(Network("10.0.0.1/32").ToString(NetworkFormat.AddressAndHostMask)), Is.EqualTo(Network("0.0.0.0/0")));
+    }
+
+    [Test]
+    public void Parse_Utf8_01()
+    {
+        Assert.That(IPNetwork.ParseStrict("10.0.0.0/24"u8), Is.EqualTo(Network("10.0.0.0/24")));
+        Assert.That(IPNetwork.TryParseStrict("2001:db8:: ffff:ffff::"u8, out var network) && network == Network("2001:db8::/32"), Is.True);
+        Assert.That(IPNetwork.TryParseStrict("010.0.0.0/8"u8, out _), Is.False);
+        Assert.Throws<FormatException>(() => IPNetwork.ParseStrict("10.0.0.0/33"u8));
+
+        // invalid UTF-8 fails to parse rather than throwing
+        Assert.That(IPNetwork.TryParseStrict(new byte[] { 0x31, 0xff, 0x2e }, out _), Is.False);
+
+        // text longer than the stack buffer, padded with whitespace, still parses
+        var paddedText = System.Text.Encoding.UTF8.GetBytes(new string(' ', 300) + "10.0.0.0/8" + new string(' ', 300));
+        Assert.That(IPNetwork.ParseStrict(paddedText), Is.EqualTo(Network("10.0.0.0/8")));
+    }
+
+    [Test]
     public void Parse_IPv4_01()
     {
         // host bits are cleared, so networks written with different host bits are equal

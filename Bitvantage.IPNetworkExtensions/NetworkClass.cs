@@ -21,6 +21,10 @@ namespace Bitvantage.InternetProtocol;
 /// <summary>
 ///     The historical classes of the IPv4 address space, from before classless inter-domain routing.
 /// </summary>
+/// <remarks>
+///     An IPv4-mapped IPv6 address or network, inside <c>::ffff:0:0/96</c>, takes the class of the IPv4 address or network that it
+///     maps.
+/// </remarks>
 public enum NetworkClass
 {
     /// <summary>

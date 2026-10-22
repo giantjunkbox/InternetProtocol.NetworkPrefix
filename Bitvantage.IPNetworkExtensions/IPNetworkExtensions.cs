@@ -24,7 +24,8 @@ namespace Bitvantage.InternetProtocol;
 
 /// <summary>
 ///     Extension members that add network arithmetic to <see cref="IPNetwork" />: masks, host ranges, subnet and
-///     supernet tests, splitting, supernets, exclusion, summarization, sort order, classification, strict parsing and formatting.
+///     supernet tests, splitting, supernets, exclusion, summarization, address ranges, address planning, sort order,
+///     classification, strict parsing, formatting and reverse DNS names.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -44,6 +45,12 @@ namespace Bitvantage.InternetProtocol;
 ///     <para>
 ///         The networks that these members return never have an IPv6 scope ID, because a scope ID identifies a network
 ///         interface rather than part of an address.
+///     </para>
+///     <para>
+///         The subnet, supernet and overlap tests treat IPv4 and IPv6 as separate address spaces, as Go's <c>net/netip</c> does,
+///         so an IPv4-mapped IPv6 address such as <c>::ffff:10.1.2.3</c> is not inside <c>10.0.0.0/8</c>. The built-in
+///         <see cref="IPNetwork.Contains(IPAddress)" /> does map such an address to IPv4. Use the <c>Unmap</c> extension method of
+///         <see cref="IPAddress" /> to compare a mapped address as IPv4.
 ///     </para>
 ///     <para>
 ///         Each member converts its networks to integers on every call. The conversion takes a few nanoseconds and allocates
@@ -236,8 +243,8 @@ public static partial class IPNetworkExtensions
         ///     one, and not equal to it.
         /// </summary>
         /// <remarks>
-        ///     The names follow <see cref="ISet{T}.IsProperSupersetOf" />. A network of the other IP version is never a subnet. To
-        ///     test whether an address is in the network, use <see cref="IPNetwork.Contains(IPAddress)" />.
+        ///     The names follow <see cref="ISet{T}.IsProperSupersetOf" />. A network of the other IP version, including an
+        ///     IPv4-mapped IPv6 network, is never a subnet; see <c>IsSupernetOf</c>.
         /// </remarks>
         /// <param name="other">The network that might be inside this one.</param>
         /// <returns><see langword="true" /> when this network contains <paramref name="other" /> and is not equal to it.</returns>
@@ -266,8 +273,10 @@ public static partial class IPNetworkExtensions
         ///     network is a supernet of itself.
         /// </summary>
         /// <remarks>
-        ///     The names follow <see cref="ISet{T}.IsSupersetOf" />. A network of the other IP version is never a subnet. To test
-        ///     whether an address is in the network, use <see cref="IPNetwork.Contains(IPAddress)" />.
+        ///     The names follow <see cref="ISet{T}.IsSupersetOf" />. A network of the other IP version is never a subnet, and that
+        ///     includes an IPv4-mapped IPv6 network such as <c>::ffff:10.0.0.0/104</c>, which is not a subnet of <c>10.0.0.0/8</c>.
+        ///     The built-in <see cref="IPNetwork.Contains(IPAddress)" /> differs here: it does treat <c>::ffff:10.1.2.3</c> as a
+        ///     member of <c>10.0.0.0/8</c>. Convert an address with <c>Unmap</c> to compare it as IPv4.
         /// </remarks>
         /// <param name="other">The network that might be inside this one.</param>
         /// <returns><see langword="true" /> when every address of <paramref name="other" /> is in this network.</returns>
@@ -313,9 +322,9 @@ public static partial class IPNetworkExtensions
 
         // the inner network is inside the outer one when its address, cut down to the outer network's prefix length, is the outer
         // network's address. IPNetwork always clears the host bits of its base address, so the outer address needs no masking
-        var version = AddressBits.GetVersion(outerAddress.AddressFamily);
-        var outerNetworkMaskBits = AddressBits.GetNetworkMaskBits(version, outerNetwork.PrefixLength);
+        var version = AddressMath.GetVersion(outerAddress.AddressFamily);
+        var outerNetworkMaskBits = AddressMath.GetNetworkMaskBits(version, outerNetwork.PrefixLength);
 
-        return (AddressBits.FromIPAddress(innerAddress) & outerNetworkMaskBits) == AddressBits.FromIPAddress(outerAddress);
+        return (AddressMath.FromIPAddress(innerAddress) & outerNetworkMaskBits) == AddressMath.FromIPAddress(outerAddress);
     }
 }

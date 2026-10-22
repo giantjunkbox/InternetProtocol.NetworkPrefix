@@ -58,7 +58,7 @@ public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
         if (reader.TokenType != JsonTokenType.String)
             throw new JsonException($"A network must be a JSON string, such as \"10.0.0.0/24\", but the value is a {reader.TokenType}.");
 
-        return ParseNetwork(reader.GetString());
+        return ReadNetwork(ref reader);
     }
 
     /// <summary>
@@ -71,7 +71,7 @@ public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
     /// <exception cref="JsonException">Thrown when the property name is not a valid network.</exception>
     public override IPNetwork ReadAsPropertyName(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        return ParseNetwork(reader.GetString());
+        return ReadNetwork(ref reader);
     }
 
     /// <summary>
@@ -97,17 +97,23 @@ public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
     }
 
     /// <summary>
-    ///     Parses the text of a JSON string or property name as a network.
+    ///     Parses the current JSON string or property name as a network.
     /// </summary>
-    /// <param name="networkText">The text.</param>
+    /// <param name="reader">The reader, positioned on the string or property name.</param>
     /// <returns>The network.</returns>
     /// <exception cref="JsonException">Thrown when the text is not a valid network.</exception>
-    private static IPNetwork ParseNetwork(string? networkText)
+    private static IPNetwork ReadNetwork(ref Utf8JsonReader reader)
     {
-        // a JsonException, rather than a FormatException, lets the serializer add the path of the bad value to the message
-        if (!IPNetwork.TryParseStrict(networkText, out var network))
-            throw new JsonException($"'{networkText}' is not a valid network.");
+        // when the value is in one piece and has no escape sequences, its raw UTF-8 bytes are the text, and are parsed without
+        // creating a string
+        if (!reader.HasValueSequence && !reader.ValueIsEscaped && IPNetwork.TryParseStrict(reader.ValueSpan, out var network))
+            return network;
 
-        return network;
+        var networkText = reader.GetString();
+        if (IPNetwork.TryParseStrict(networkText, out network))
+            return network;
+
+        // a JsonException, rather than a FormatException, lets the serializer add the path of the bad value to the message
+        throw new JsonException($"'{networkText}' is not a valid network.");
     }
 }

@@ -42,13 +42,13 @@ internal readonly record struct NetworkBits : IComparable<NetworkBits>
         PrefixLength = prefixLength;
 
         // clear the host bits so that the value always holds the network address; for example 10.1.2.3/8 becomes 10.0.0.0/8
-        BaseAddressBits = addressBits & AddressBits.GetNetworkMaskBits(version, prefixLength);
+        BaseAddressBits = addressBits & AddressMath.GetNetworkMaskBits(version, prefixLength);
     }
 
     /// <summary>
     ///     The number of bits in an address of this network's IP version: 32 for IPv4, or 128 for IPv6.
     /// </summary>
-    public int AddressBitLength => AddressBits.GetBitLength(Version);
+    public int AddressBitLength => AddressMath.GetBitLength(Version);
 
     /// <summary>
     ///     The base address, which is the network address, in integer form.
@@ -87,7 +87,7 @@ internal readonly record struct NetworkBits : IComparable<NetworkBits>
     /// <summary>
     ///     The host mask in integer form, which has a one in every bit that identifies a host.
     /// </summary>
-    public UInt128 HostMaskBits => AddressBits.GetHostMaskBits(Version, PrefixLength);
+    public UInt128 HostMaskBits => AddressMath.GetHostMaskBits(Version, PrefixLength);
 
     /// <summary>
     ///     Gets whether this is a host network, a /32 or a /128, which holds a single address.
@@ -110,7 +110,7 @@ internal readonly record struct NetworkBits : IComparable<NetworkBits>
     /// <summary>
     ///     The network mask in integer form, which has a one in every bit that identifies the network.
     /// </summary>
-    public UInt128 NetworkMaskBits => AddressBits.GetNetworkMaskBits(Version, PrefixLength);
+    public UInt128 NetworkMaskBits => AddressMath.GetNetworkMaskBits(Version, PrefixLength);
 
     /// <summary>
     ///     The number of leading bits of an address that identify the network.
@@ -193,9 +193,9 @@ internal readonly record struct NetworkBits : IComparable<NetworkBits>
     public static NetworkBits FromIPNetwork(IPNetwork network)
     {
         var baseAddress = network.BaseAddress;
-        var version = AddressBits.GetVersion(baseAddress.AddressFamily);
+        var version = AddressMath.GetVersion(baseAddress.AddressFamily);
 
-        return new NetworkBits(version, AddressBits.FromIPAddress(baseAddress), network.PrefixLength);
+        return new NetworkBits(version, AddressMath.FromIPAddress(baseAddress), network.PrefixLength);
     }
 
     /// <summary>
@@ -205,7 +205,7 @@ internal readonly record struct NetworkBits : IComparable<NetworkBits>
     /// <returns>A new <see cref="IPAddress" />.</returns>
     public IPAddress ToIPAddress(UInt128 addressBits)
     {
-        return AddressBits.ToIPAddress(addressBits, Version);
+        return AddressMath.ToIPAddress(addressBits, Version);
     }
 
     /// <summary>

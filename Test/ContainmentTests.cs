@@ -109,6 +109,18 @@ public class ContainmentTests
     }
 
     [Test]
+    public void IsSupernetOf_IPv4_02()
+    {
+        // the subnet tests keep IPv4 and IPv6 apart, while the built-in Contains maps an IPv4-mapped address to IPv4
+        var network = Network("10.0.0.0/8");
+        var mappedAddress = Address("::ffff:10.1.2.3");
+
+        Assert.That(network.Contains(mappedAddress), Is.True);
+        Assert.That(network.IsSupernetOf(IPNetwork.FromAddress(mappedAddress)), Is.False);
+        Assert.That(network.IsSupernetOf(IPNetwork.FromAddress(mappedAddress.Unmap())), Is.True);
+    }
+
+    [Test]
     public void IsProperSupernetOf_IPv6_01()
     {
         var network = Network("2001:db8::/32");

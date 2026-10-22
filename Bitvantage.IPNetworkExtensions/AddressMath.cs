@@ -40,7 +40,7 @@ namespace Bitvantage.InternetProtocol;
 ///     the compiler can inline them.
 ///     </para>
 /// </remarks>
-internal static class AddressBits
+internal static class AddressMath
 {
     /// <summary>
     ///     The number of bits in an IPv4 address.

@@ -22,8 +22,16 @@ namespace Bitvantage.InternetProtocol;
 ///     The purpose that a block of the IPv4 or IPv6 address space is set aside for.
 /// </summary>
 /// <remarks>
-///     A network takes the allocation of the most specific registered block that contains all of it. A network that spans blocks
-///     with different allocations, such as <c>0.0.0.0/1</c>, is <see cref="Undefined" />.
+///     <para>
+///         The blocks come from the IANA IPv4 and IPv6 special-purpose address registries. A network takes the allocation of the
+///         most specific block that contains all of it, so a globally reachable block inside a reserved one, such as
+///         <c>192.0.0.9/32</c> inside <c>192.0.0.0/24</c>, is <see cref="Global" />. A network that spans blocks with different
+///         allocations, such as <c>0.0.0.0/1</c>, is <see cref="Undefined" />.
+///     </para>
+///     <para>
+///         An IPv4-mapped IPv6 address or network, inside <c>::ffff:0:0/96</c>, takes the allocation of the IPv4 address or network
+///         that it maps, so <c>::ffff:10.0.0.1</c> is <see cref="Private" />. A dual-stack server reports IPv4 clients this way.
+///     </para>
 /// </remarks>
 public enum AddressAllocation
 {
@@ -65,7 +73,7 @@ public enum AddressAllocation
     Multicast = 6,
 
     /// <summary>
-    ///     The reserved, formerly experimental, block <c>240.0.0.0/4</c>.
+    ///     The reserved, formerly experimental, block <c>240.0.0.0/4</c> (RFC 1112).
     /// </summary>
     Experimental = 7,
 
@@ -94,5 +102,48 @@ public enum AddressAllocation
     /// <summary>
     ///     The unspecified address, <c>0.0.0.0/32</c> or <c>::/128</c>, which stands for the absence of an address.
     /// </summary>
-    Unspecified = 12
+    Unspecified = 12,
+
+    /// <summary>
+    ///     Address space for IETF protocol assignments: <c>192.0.0.0/24</c> (RFC 6890) and <c>2001::/23</c> (RFC 2928). The
+    ///     globally reachable assignments inside them, such as the Port Control Protocol anycast addresses, are <see cref="Global" />.
+    /// </summary>
+    ProtocolAssignments = 13,
+
+    /// <summary>
+    ///     Prefixes for translating between IPv4 and IPv6, used by NAT64: <c>64:ff9b::/96</c> (RFC 6052) and <c>64:ff9b:1::/48</c>
+    ///     (RFC 8215).
+    /// </summary>
+    IPv4Translation = 14,
+
+    /// <summary>
+    ///     The discard-only prefix, <c>100::/64</c> (RFC 6666), for traffic that is meant to be dropped.
+    /// </summary>
+    Discard = 15,
+
+    /// <summary>
+    ///     Dummy addresses for hosts that have no other address: <c>192.0.0.8/32</c> (RFC 7600) and <c>100:0:0:1::/64</c> (RFC 9780).
+    /// </summary>
+    Dummy = 16,
+
+    /// <summary>
+    ///     Teredo tunneling of IPv6 over IPv4 UDP, <c>2001::/32</c> (RFC 4380).
+    /// </summary>
+    Teredo = 17,
+
+    /// <summary>
+    ///     6to4 tunneling of IPv6 over IPv4: <c>2002::/16</c> (RFC 3056), and the deprecated relay anycast block
+    ///     <c>192.88.99.0/24</c> (RFC 7526).
+    /// </summary>
+    SixToFour = 18,
+
+    /// <summary>
+    ///     The deprecated IPv6 site-local prefix, <c>fec0::/10</c> (RFC 3879), which unique local addresses replaced.
+    /// </summary>
+    SiteLocal = 19,
+
+    /// <summary>
+    ///     Segment Routing over IPv6 segment identifiers, <c>5f00::/16</c> (RFC 9602).
+    /// </summary>
+    SegmentRouting = 20
 }

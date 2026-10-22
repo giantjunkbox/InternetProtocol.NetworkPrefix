@@ -53,5 +53,14 @@ public enum NetworkFormat
     ///     The network address and the host mask separated by a space, such as <c>10.0.0.0 0.0.0.255</c>. This is the form
     ///     that Cisco access control lists use, where the host mask is called a wildcard mask.
     /// </summary>
-    AddressAndHostMask
+    /// <remarks>
+    ///     The text parses back to the same network, except for a /0 or a /32 (or /128). Their host masks, all ones and all zeros,
+    ///     are also valid network masks, and a parser reads them as network masks.
+    /// </remarks>
+    AddressAndHostMask,
+
+    /// <summary>
+    ///     The host mask alone, also called the wildcard mask, such as <c>0.0.0.255</c>.
+    /// </summary>
+    HostMask
 }

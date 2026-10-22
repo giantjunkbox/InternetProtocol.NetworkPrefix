@@ -57,15 +57,16 @@ public class OperationTests
     [Test]
     public void Exclude_IPv4_01()
     {
+        // the result is sorted
         var expectedResult = Networks(
-            "10.0.128.0/17",
-            "10.0.64.0/18",
-            "10.0.32.0/19",
-            "10.0.16.0/20",
             "10.0.0.0/21",
-            "10.0.12.0/22",
             "10.0.8.0/23",
-            "10.0.11.0/24");
+            "10.0.11.0/24",
+            "10.0.12.0/22",
+            "10.0.16.0/20",
+            "10.0.32.0/19",
+            "10.0.64.0/18",
+            "10.0.128.0/17");
 
         Assert.That(Network("10.0.0.0/16").Exclude(Network("10.0.10.0/24")), Is.EqualTo(expectedResult));
     }
@@ -73,7 +74,7 @@ public class OperationTests
     [Test]
     public void Exclude_IPv4_02()
     {
-        var expectedResult = Networks("10.20.30.4/30", "10.20.30.2/31", "10.20.30.0/32");
+        var expectedResult = Networks("10.20.30.0/32", "10.20.30.2/31", "10.20.30.4/30");
 
         Assert.That(Network("10.20.30.0/29").Exclude(Network("10.20.30.1/32")), Is.EqualTo(expectedResult));
     }
@@ -95,9 +96,107 @@ public class OperationTests
     [Test]
     public void Exclude_IPv6_01()
     {
-        var expectedResult = Networks("2001:db8::2/127", "2001:db8::1/128");
+        var expectedResult = Networks("2001:db8::1/128", "2001:db8::2/127");
 
         Assert.That(Network("2001:db8::/126").Exclude(Network("2001:db8::/128")), Is.EqualTo(expectedResult));
+    }
+
+    [Test]
+    public void Exclude_IPv4_04()
+    {
+        // several networks at once, some of which lie outside the network or are of the other IP version
+        var networksToExclude = Networks("10.0.0.0/26", "10.0.0.128/26", "10.0.0.200/32", "192.168.0.0/16", "2001:db8::/32");
+
+        var expectedResult = Networks("10.0.0.64/26", "10.0.0.192/29", "10.0.0.201/32", "10.0.0.202/31", "10.0.0.204/30", "10.0.0.208/28", "10.0.0.224/27");
+
+        Assert.That(Network("10.0.0.0/24").Exclude(networksToExclude), Is.EqualTo(expectedResult));
+    }
+
+    [Test]
+    public void Exclude_IPv4_05()
+    {
+        // overlapping networks to exclude are handled, and excluding nothing leaves the network
+        Assert.That(Network("10.0.0.0/24").Exclude(Networks("10.0.0.0/25", "10.0.0.0/26")), Is.EqualTo(Networks("10.0.0.128/25")));
+        Assert.That(Network("10.0.0.0/24").Exclude(Array.Empty<IPNetwork>()), Is.EqualTo(Networks("10.0.0.0/24")));
+        Assert.Throws<ArgumentNullException>(() => Network("10.0.0.0/24").Exclude((IEnumerable<IPNetwork>)null!));
+    }
+
+    [Test]
+    public void Exclude_IPv4_06()
+    {
+        // the set difference of two sets of networks
+        var networks = Networks("10.0.0.0/24", "10.0.2.0/24", "2001:db8::/32");
+        var networksToExclude = Networks("10.0.0.128/25", "10.0.1.0/24", "2001:db8::/33");
+
+        Assert.That(IPNetwork.Exclude(networks, networksToExclude), Is.EqualTo(Networks("10.0.0.0/25", "10.0.2.0/24", "2001:db8:8000::/33")));
+
+        // one network to exclude can cover several networks
+        Assert.That(IPNetwork.Exclude(Networks("10.0.0.0/24", "10.0.2.0/24", "10.0.8.0/24"), Networks("10.0.0.0/22")), Is.EqualTo(Networks("10.0.8.0/24")));
+
+        Assert.Throws<ArgumentNullException>(() => IPNetwork.Exclude(null!, networksToExclude));
+        Assert.Throws<ArgumentNullException>(() => IPNetwork.Exclude(networks, null!));
+    }
+
+    [Test]
+    public void AvailableSubnets_IPv4_01()
+    {
+        // an address plan with the first /24 and half of the second allocated
+        var plan = Network("10.0.0.0/22");
+        var allocatedNetworks = Networks("10.0.0.0/24", "10.0.1.128/25", "2001:db8::/32");
+
+        // the free half of the second /24 is too small for a /24, so the first free /24 is the third
+        Assert.That(plan.AvailableSubnets(24, allocatedNetworks), Is.EqualTo(Networks("10.0.2.0/24", "10.0.3.0/24")));
+        Assert.That(plan.AvailableSubnets(24, allocatedNetworks).First(), Is.EqualTo(Network("10.0.2.0/24")));
+        Assert.That(plan.AvailableSubnets(25, allocatedNetworks), Is.EqualTo(Networks("10.0.1.0/25", "10.0.2.0/25", "10.0.2.128/25", "10.0.3.0/25", "10.0.3.128/25")));
+    }
+
+    [Test]
+    public void AvailableSubnets_IPv4_02()
+    {
+        var plan = Network("10.0.0.0/22");
+
+        Assert.That(plan.AvailableSubnets(22, Array.Empty<IPNetwork>()), Is.EqualTo(new[] { plan }));
+        Assert.That(plan.AvailableSubnets(24, Networks("10.0.0.0/8")), Is.Empty);
+
+        // the exceptions are thrown by the method itself, not when the result is enumerated
+        Assert.Throws<ArgumentOutOfRangeException>(() => plan.AvailableSubnets(21, Array.Empty<IPNetwork>()));
+        Assert.Throws<ArgumentOutOfRangeException>(() => plan.AvailableSubnets(33, Array.Empty<IPNetwork>()));
+        Assert.Throws<ArgumentNullException>(() => plan.AvailableSubnets(24, null!));
+    }
+
+    [Test]
+    public void GetAddress_IPv4_01()
+    {
+        var network = Network("10.0.0.0/24");
+
+        Assert.That(network.GetAddress(0), Is.EqualTo(Address("10.0.0.0")));
+        Assert.That(network.GetAddress(10), Is.EqualTo(Address("10.0.0.10")));
+        Assert.That(network.GetAddress(255), Is.EqualTo(Address("10.0.0.255")));
+        Assert.Throws<ArgumentOutOfRangeException>(() => network.GetAddress(256));
+    }
+
+    [Test]
+    public void GetAddress_IPv6_01()
+    {
+        // every offset of ::/0 is valid, up to the last IPv6 address
+        Assert.That(Network("::/0").GetAddress(UInt128.MaxValue), Is.EqualTo(Address("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")));
+        Assert.That(Network("2001:db8::/64").GetAddress(0x1_0000), Is.EqualTo(Address("2001:db8::1:0")));
+    }
+
+    [Test]
+    public void GetOffset_IPv4_01()
+    {
+        var network = Network("10.0.0.0/24");
+
+        Assert.That(network.GetOffset(Address("10.0.0.10")), Is.EqualTo((UInt128)10));
+        Assert.That(network.GetOffset(network.GetAddress(200)), Is.EqualTo((UInt128)200));
+
+        // an address outside the network, of the other IP version, or IPv4-mapped is not in the network
+        Assert.Throws<ArgumentException>(() => network.GetOffset(Address("10.0.1.0")));
+        Assert.Throws<ArgumentException>(() => network.GetOffset(Address("2001:db8::1")));
+        Assert.Throws<ArgumentException>(() => network.GetOffset(Address("::ffff:10.0.0.10")));
+        Assert.That(network.GetOffset(Address("::ffff:10.0.0.10").Unmap()), Is.EqualTo((UInt128)10));
+        Assert.Throws<ArgumentNullException>(() => network.GetOffset(null!));
     }
 
     [Test]
@@ -166,8 +265,9 @@ public class OperationTests
     {
         var network = Network("10.0.1.0/24");
 
-        // a supernet must be shorter than the network, and a /0 has no supernet
-        Assert.Throws<ArgumentOutOfRangeException>(() => network.GetSupernet(24));
+        // a supernet can't be longer than the network, a supernet of the same length is the network itself, and a /0 has no
+        // supernet one bit shorter
+        Assert.That(network.GetSupernet(24), Is.EqualTo(network));
         Assert.Throws<ArgumentOutOfRangeException>(() => network.GetSupernet(25));
         Assert.Throws<ArgumentOutOfRangeException>(() => network.GetSupernet(-1));
         Assert.Throws<InvalidOperationException>(() => Network("0.0.0.0/0").GetSupernet());
@@ -225,8 +325,11 @@ public class OperationTests
         Assert.Throws<InvalidOperationException>(() => Network("10.20.30.40/32").Split());
         Assert.Throws<ArgumentOutOfRangeException>(() => network.Split(0));
         Assert.Throws<ArgumentOutOfRangeException>(() => network.Split(16));
-        Assert.Throws<ArgumentOutOfRangeException>(() => network.Split(24));
         Assert.Throws<ArgumentOutOfRangeException>(() => network.Split(33));
+
+        // splitting to the network's own length produces the network itself, including for the whole IPv6 space
+        Assert.That(network.Split(24), Is.EqualTo(new[] { network }));
+        Assert.That(Network("::/0").Split(0), Is.EqualTo(Networks("::/0")));
     }
 
     [Test]

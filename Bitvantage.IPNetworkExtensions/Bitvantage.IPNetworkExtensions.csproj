@@ -12,13 +12,13 @@
 		<PackageProjectUrl>https://github.com/Bitvantage/InternetProtocol.NetworkPrefix</PackageProjectUrl>
 		<PackageIcon>icon.png</PackageIcon>
 		<RepositoryType>git</RepositoryType>
-		<PackageTags>ipnetwork;cidr;subnet;subnetting;supernet;supernetting;netmask;subnet-mask;wildcard-mask;subnet-calculator;cidr-calculator;ip-address;ipaddress;ipv4;ipv6;network;networking;extension-members</PackageTags>
+		<PackageTags>ipnetwork;cidr;subnet;subnetting;supernet;supernetting;netmask;subnet-mask;wildcard-mask;subnet-calculator;cidr-calculator;ip-range;range-to-cidr;ipam;ip-address;ipaddress;reverse-dns;ipv4;ipv6;network;networking;extension-members</PackageTags>
 		<VersionPrefix>3.0.0</VersionPrefix>
 		<FileVersion>3.0.0</FileVersion>
 		<AssemblyVersion>3.0.0</AssemblyVersion>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
-		<Description>CIDR, subnet and supernet math for System.Net.IPNetwork. Adds network masks, host ranges, subnet and supernet tests, splitting, summarization, exclusion, sorting, address classification, strict parsing and JSON serialization as C# 14 extension members.</Description>
+		<Description>CIDR, subnet and supernet math for System.Net.IPNetwork and IPAddress. Adds network and wildcard masks, host ranges, subnet and supernet tests, splitting, summarization, exclusion, IP range to CIDR conversion, free subnet search, sorting, address arithmetic, IANA address classification, strict parsing, reverse DNS names and JSON serialization as C# 14 extension members.</Description>
 		<RepositoryUrl>https://github.com/Bitvantage/InternetProtocol.NetworkPrefix.git</RepositoryUrl>
 		<Copyright>Copyright © Michael Crino 2024</Copyright>
 
