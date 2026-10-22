@@ -38,6 +38,9 @@ var fromHost = NetworkPrefix.Parse("10.0.0.7");                  // 10.0.0.7/32
 var truncated = NetworkPrefix.Parse("10.1.2.3/8");               // 10.0.0.0/8, host bits are cleared
 var isValid = NetworkPrefix.TryParse("10.0.0.0/33", out _);      // false, TryParse never throws
 
+// only standard dotted-decimal IPv4 is accepted; IPAddress.Parse would read 010.0.0.0 as the octal 8.0.0.0
+var isOctal = NetworkPrefix.TryParse("010.0.0.0/8", out _);      // false
+
 // Parse never touches the network; host names are looked up with Resolve or ResolveAsync
 var resolved = await NetworkPrefix.ResolveAsync("example.com/24");
 

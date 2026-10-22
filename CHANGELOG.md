@@ -31,6 +31,11 @@ library's features to `System.Net.IPNetwork`. Backwards compatibility was not a 
   | `RemoveNetwork`     | `Exclude`             |
   | `AddressAllocation.AutomaticPrivateIPAddressing` | `AddressAllocation.LinkLocal` |
 
+- The conversion from `string` to `NetworkPrefix` is explicit, because it throws for invalid text, and the implicit
+  conversion from `NetworkPrefix` to `string` was removed. Use `Parse` or a cast, and `ToString`.
+- For IPv6, which has no broadcast address, `LastHost`, `Hosts()` and `TotalHosts` now include the last address, and
+  only the subnet-router anycast address, which is the network address, is left out. A /64 has 2^64 - 1 hosts rather
+  than 2^64 - 2. The detail format no longer shows a broadcast row for IPv6.
 - `Parse` and `TryParse` no longer look up host names. Parsing a string made a blocking DNS query, which meant that
   JSON or XML deserialization, and the implicit conversion from `string`, could reach the network. Host names are now
   looked up only by the new `Resolve` and `ResolveAsync` methods.
@@ -77,6 +82,10 @@ library's features to `System.Net.IPNetwork`. Backwards compatibility was not a 
 
 ### Fixed
 
+- Parsing accepted every IPv4 form that `IPAddress` accepts, including shorthand such as `10.0.0`, whole numbers and
+  hexadecimal, and read a number with a leading zero as octal, so `010.0.0.0/8` parsed as `8.0.0.0/8`. The octal
+  reading is a known source of security bugs. Only the standard form of four decimal numbers without leading zeros is
+  now accepted, for both addresses and masks.
 - Converting an IPv4 address to an `IPAddress` wrote 16 bytes into a 4 byte array, past the end of the array. This
   could corrupt whatever object followed it in memory.
 - `TryParse` threw, rather than returning `false`, for a prefix length out of range, such as `10.0.0.0/33`, a negative
@@ -100,6 +109,10 @@ library's features to `System.Net.IPNetwork`. Backwards compatibility was not a 
 
 - Apply the renames in the table above.
 - Replace `Parse` or `TryParse` calls that pass a host name with `Resolve` or `ResolveAsync`.
+- Replace implicit conversions from text with `Parse` or an explicit cast, and implicit conversions to text with
+  `ToString`.
+- Write IPv4 addresses in the standard dotted-decimal form; text such as `10.0.0/24` or `010.0.0.0/8` is rejected.
+- Expect IPv6 host ranges and counts to include the last address.
 - Replace `RemoveNetwork` with `Exclude`, and remove any handling of the exceptions it threw for an equal, containing
   or disjoint network.
 - If you relied on `Summarize` keeping covered networks, or on the order it returned, adjust for the sorted minimal
