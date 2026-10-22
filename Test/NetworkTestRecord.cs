@@ -21,18 +21,18 @@ using System.Net;
 namespace Test;
 
 /// <summary>
-///     The expected properties of a prefix built from an address and a prefix length.
+///     The expected properties of a network built from an address and a prefix length.
 /// </summary>
-public record NetworkPrefixTestRecord
+public record NetworkTestRecord
 {
     /// <summary>
     ///     Creates a test case from the text of each address.
     /// </summary>
-    public NetworkPrefixTestRecord(string address, int prefixLength, string networkAddress, string networkMask, string broadcastAddress, string hostMask, string firstHost, string lastHost)
+    public NetworkTestRecord(string address, int prefixLength, string baseAddress, string networkMask, string broadcastAddress, string hostMask, string firstHost, string lastHost)
     {
         Address = IPAddress.Parse(address);
         PrefixLength = prefixLength;
-        NetworkAddress = IPAddress.Parse(networkAddress);
+        BaseAddress = IPAddress.Parse(baseAddress);
         NetworkMask = IPAddress.Parse(networkMask);
         BroadcastAddress = IPAddress.Parse(broadcastAddress);
         HostMask = IPAddress.Parse(hostMask);
@@ -41,9 +41,14 @@ public record NetworkPrefixTestRecord
     }
 
     /// <summary>
-    ///     The address that the prefix is built from, which may have host bits set.
+    ///     The address that the network is built from, which may have host bits set.
     /// </summary>
     public IPAddress Address { get; init; }
+
+    /// <summary>
+    ///     The expected base address, which is <see cref="Address" /> with the host bits cleared.
+    /// </summary>
+    public IPAddress BaseAddress { get; init; }
 
     /// <summary>
     ///     The expected broadcast address.
@@ -66,17 +71,12 @@ public record NetworkPrefixTestRecord
     public IPAddress LastHost { get; init; }
 
     /// <summary>
-    ///     The expected network address, which is <see cref="Address" /> with the host bits cleared.
-    /// </summary>
-    public IPAddress NetworkAddress { get; init; }
-
-    /// <summary>
     ///     The expected network mask.
     /// </summary>
     public IPAddress NetworkMask { get; init; }
 
     /// <summary>
-    ///     The prefix length that the prefix is built with.
+    ///     The prefix length that the network is built with.
     /// </summary>
     public int PrefixLength { get; init; }
 }

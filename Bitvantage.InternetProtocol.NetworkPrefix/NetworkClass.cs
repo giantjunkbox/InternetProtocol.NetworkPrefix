@@ -24,7 +24,7 @@ namespace Bitvantage.InternetProtocol;
 public enum NetworkClass
 {
     /// <summary>
-    ///     The prefix is an IPv6 prefix, or spans more than one class.
+    ///     The network is an IPv6 network, or spans more than one class.
     /// </summary>
     Undefined = 0,
 

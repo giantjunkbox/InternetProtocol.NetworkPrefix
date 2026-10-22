@@ -19,11 +19,8 @@
 namespace Bitvantage.InternetProtocol;
 
 /// <summary>
-///     The ways that <see cref="NetworkPrefix.ToString(NetworkFormat)" /> can write a network prefix.
+///     The ways that the <c>ToString(NetworkFormat)</c> extension method on <see cref="System.Net.IPNetwork" /> can write a network.
 /// </summary>
-/// <remarks>
-///     The name of a value can also be used as a format string, as in <c>$"{prefix:AddressAndMask}"</c>.
-/// </remarks>
 public enum NetworkFormat
 {
     /// <summary>

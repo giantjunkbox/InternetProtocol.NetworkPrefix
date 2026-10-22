@@ -16,61 +16,67 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+using System.Net;
+
 namespace Bitvantage.InternetProtocol;
 
-public sealed partial class NetworkPrefix
+public static partial class IPNetworkExtensions
 {
-    /// <summary>
-    ///     The purpose of the most specific registered block of address space that contains all of this prefix, such as
-    ///     <see cref="AddressAllocation.Private" /> for <c>10.1.0.0/16</c>.
-    /// </summary>
-    /// <remarks>
-    ///     A prefix that spans blocks with different purposes, such as <c>0.0.0.0/1</c>, is <see cref="AddressAllocation.Undefined" />.
-    /// </remarks>
-    public AddressAllocation Allocation => FindMostSpecificBlock(ClassificationTables.Allocations, AddressAllocation.Undefined);
+    /// <param name="network">The network.</param>
+    extension(IPNetwork network)
+    {
+        /// <summary>
+        ///     The purpose of the most specific registered block of address space that contains all of this network, such as
+        ///     <see cref="AddressAllocation.Private" /> for <c>10.1.0.0/16</c>.
+        /// </summary>
+        /// <remarks>
+        ///     A network that spans blocks with different purposes, such as <c>0.0.0.0/1</c>, is <see cref="AddressAllocation.Undefined" />.
+        /// </remarks>
+        public AddressAllocation Allocation => FindMostSpecificBlock(ClassificationTables.Allocations, NetworkBits.FromIPNetwork(network), AddressAllocation.Undefined);
+
+        /// <summary>
+        ///     The historical class of an IPv4 network, such as <see cref="NetworkClass.A" /> for <c>10.0.0.0/8</c>.
+        /// </summary>
+        /// <remarks>
+        ///     An IPv6 network, or an IPv4 network that spans more than one class, such as <c>0.0.0.0/0</c>, is
+        ///     <see cref="NetworkClass.Undefined" />.
+        /// </remarks>
+        public NetworkClass Class => FindMostSpecificBlock(ClassificationTables.Classes, NetworkBits.FromIPNetwork(network), NetworkClass.Undefined);
+    }
 
     /// <summary>
-    ///     The historical class of an IPv4 prefix, such as <see cref="NetworkClass.A" /> for <c>10.0.0.0/8</c>.
-    /// </summary>
-    /// <remarks>
-    ///     An IPv6 prefix, or an IPv4 prefix that spans more than one class, such as <c>0.0.0.0/0</c>, is
-    ///     <see cref="NetworkClass.Undefined" />.
-    /// </remarks>
-    public NetworkClass Class => FindMostSpecificBlock(ClassificationTables.Classes, NetworkClass.Undefined);
-
-    /// <summary>
-    ///     Finds the value of the most specific block in a table that contains all of this prefix.
+    ///     Finds the value of the most specific block in a table that contains all of a network.
     /// </summary>
     /// <typeparam name="TValue">The type of value that the table holds.</typeparam>
     /// <param name="table">The table, ordered from the most specific block to the least specific.</param>
-    /// <param name="defaultValue">The value to return when no block contains this prefix.</param>
-    /// <returns>The value of the most specific block that contains this prefix.</returns>
-    private TValue FindMostSpecificBlock<TValue>((NetworkPrefix Block, TValue Value)[] table, TValue defaultValue)
+    /// <param name="network">The network to classify.</param>
+    /// <param name="defaultValue">The value to return when no block contains the network.</param>
+    /// <returns>The value of the most specific block that contains the network.</returns>
+    private static TValue FindMostSpecificBlock<TValue>((NetworkBits Block, TValue Value)[] table, NetworkBits network, TValue defaultValue)
     {
         // the table is ordered from the longest prefix to the shortest, so the first block found is the most specific one
         foreach (var (block, value) in table)
-            if (block.ContainsOrEqual(this))
+            if (block.ContainsOrEqual(network))
                 return value;
 
         return defaultValue;
     }
 
     /// <summary>
-    ///     The lookup tables behind <see cref="Allocation" /> and <see cref="Class" />.
+    ///     The lookup tables behind <c>Allocation</c> and <c>Class</c>.
     /// </summary>
     /// <remarks>
-    ///     The tables are in a nested class so that they are built the first time they are used, after everything that building a
-    ///     <see cref="NetworkPrefix" /> depends on.
+    ///     The tables are in a nested class so that they are built the first time they are used.
     /// </remarks>
     private static class ClassificationTables
     {
         /// <summary>
         ///     The purpose of each registered block of address space, from the IANA IPv4 and IPv6 special-purpose address registries.
         /// </summary>
-        internal static readonly (NetworkPrefix Block, AddressAllocation Value)[] Allocations = CreateTable(
+        internal static readonly (NetworkBits Block, AddressAllocation Value)[] Allocations = CreateTable(
         [
             // the IPv4 globally routable unicast space is 0.0.0.0/0 less the multicast, reserved and private blocks. It is listed
-            // as the blocks that remain, so that a prefix that spans a private block is not reported as global
+            // as the blocks that remain, so that a network that spans a private block is not reported as global
             ("0.0.0.0/5", AddressAllocation.Global),
             ("8.0.0.0/7", AddressAllocation.Global),
             ("11.0.0.0/8", AddressAllocation.Global),
@@ -141,7 +147,7 @@ public sealed partial class NetworkPrefix
         /// <summary>
         ///     The block of the IPv4 address space that belongs to each historical class.
         /// </summary>
-        internal static readonly (NetworkPrefix Block, NetworkClass Value)[] Classes = CreateTable(
+        internal static readonly (NetworkBits Block, NetworkClass Value)[] Classes = CreateTable(
         [
             ("0.0.0.0/1", NetworkClass.A),
             ("128.0.0.0/2", NetworkClass.B),
@@ -156,12 +162,25 @@ public sealed partial class NetworkPrefix
         /// <typeparam name="TValue">The type of value that the table holds.</typeparam>
         /// <param name="entries">The blocks, in CIDR notation, and their values.</param>
         /// <returns>The table, ordered by prefix length, longest first.</returns>
-        private static (NetworkPrefix Block, TValue Value)[] CreateTable<TValue>((string Block, TValue Value)[] entries)
+        private static (NetworkBits Block, TValue Value)[] CreateTable<TValue>((string Block, TValue Value)[] entries)
         {
             return entries
-                .Select(entry => (Block: Parse(entry.Block), entry.Value))
+                .Select(entry => (Block: ParseBlock(entry.Block), entry.Value))
                 .OrderByDescending(entry => entry.Block.PrefixLength)
                 .ToArray();
+        }
+
+        /// <summary>
+        ///     Parses a block of a table, which is written in CIDR notation.
+        /// </summary>
+        /// <param name="blockText">The block, such as <c>10.0.0.0/8</c>.</param>
+        /// <returns>The block in integer form.</returns>
+        private static NetworkBits ParseBlock(string blockText)
+        {
+            if (!TryParseCore(blockText, out var block))
+                throw new InvalidOperationException($"The classification table entry '{blockText}' is not a valid network.");
+
+            return block;
         }
     }
 }

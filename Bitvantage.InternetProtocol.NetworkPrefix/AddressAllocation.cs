@@ -22,7 +22,7 @@ namespace Bitvantage.InternetProtocol;
 ///     The purpose that a block of the IPv4 or IPv6 address space is set aside for.
 /// </summary>
 /// <remarks>
-///     A prefix takes the allocation of the most specific registered block that contains all of it. A prefix that spans blocks
+///     A network takes the allocation of the most specific registered block that contains all of it. A network that spans blocks
 ///     with different allocations, such as <c>0.0.0.0/1</c>, is <see cref="Undefined" />.
 /// </remarks>
 public enum AddressAllocation

@@ -7,74 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.0.0] - Unreleased
 
-This release moves the library to .NET 10, fixes a number of defects, reworks the API for clarity, and adds the
-library's features to `System.Net.IPNetwork`. Backwards compatibility was not a goal; see the migration notes.
+This release replaces the `NetworkPrefix` class with extension members on .NET's built-in `System.Net.IPNetwork`, moves
+the library to .NET 10, and fixes a number of defects. `IPNetwork` already holds a network address and a prefix length,
+and it is the type that .NET and other libraries accept, so a second type for the same thing only added conversions.
+The members are C# 14 extension members, so properties, operators and static members appear on `IPNetwork` itself
+once the `Bitvantage.InternetProtocol` namespace is imported. Backwards compatibility was not a goal; see the migration
+notes.
+
+### Removed
+
+- The `NetworkPrefix` class, and `NetworkPrefixJsonConverter`. Each member maps to `IPNetwork` as follows:
+
+  | 2.0.0 `NetworkPrefix`                        | 3.0.0 `IPNetwork`                                    |
+  |----------------------------------------------|------------------------------------------------------|
+  | `NetworkPrefix.Parse`, `TryParse`            | `IPNetwork.ParseStrict`, `TryParseStrict`            |
+  | `Parse` with a host name                     | `IPNetwork.Resolve`, `ResolveAsync`                  |
+  | `new NetworkPrefix(address, length)`         | `new IPNetwork(address, length)`                     |
+  | `new NetworkPrefix(address)`                 | `IPNetwork.FromAddress(address)`                     |
+  | `new NetworkPrefix(address, mask)`           | `IPNetwork.FromMask(address, mask)`                  |
+  | `Address`                                    | `BaseAddress`                                        |
+  | `Length`                                     | `PrefixLength`                                       |
+  | `AddressLength`                              | `AddressBitLength`                                   |
+  | `NetworkBits`                                | `BaseAddressBits`                                    |
+  | `Mask`                                       | `NetworkMask`                                        |
+  | `Wildcard`                                   | `HostMask`                                           |
+  | `Broadcast`                                  | `BroadcastAddress`                                   |
+  | `ComplementaryPrefix`                        | `ComplementaryNetwork`                               |
+  | `RemoveNetwork(network)`                     | `Exclude(network)`                                   |
+  | `GetContainingNetwork(other)`                | `IPNetwork.GetContainingNetwork(network, other)`     |
+  | `NetworkPrefix.GetContainingNetwork(...)`    | `IPNetwork.GetContainingNetwork(...)`                |
+  | `NetworkPrefix.Summarize(...)`               | `IPNetwork.Summarize(...)`                           |
+  | `CompareTo`, sorting by default              | `CompareTo`, sorting with `IPNetwork.Comparer`       |
+  | implicit conversions to and from `string`    | `IPNetwork.ParseStrict` and `ToString`               |
+  | `NetworkPrefixJsonConverter`                 | `IPNetworkJsonConverter`, registered in the options  |
+  | XML serialization                            | none; serialize a `string` instead                   |
+
+  `NetworkMaskBits`, `HostMaskBits`, `FirstHost`, `LastHost`, `TotalHosts`, `TotalAddresses`, `Version`,
+  `Allocation`, `Class`, `Contains`, `ContainsOrEqual`, `ContainedBy`, `ContainedByOrEqual`, `Addresses`, `Hosts`,
+  `Split`, `ToString(NetworkFormat)` and the `+`, `-`, `<` and `>` operators keep their names. Equality and hashing are
+  those of `IPNetwork`.
+
+- `AddressAllocation.AutomaticPrivateIPAddressing` is now `AddressAllocation.LinkLocal`, since it also covers IPv6.
 
 ### Changed
 
 - The library targets .NET 10. .NET 7 is no longer supported by Microsoft.
-- `NetworkPrefix` is now `sealed` and immutable. `Address`, `Length`, `Version`, `HostMaskBits` and
-  `NetworkMaskBits` had public setters, so changing, for example, `Length` left the masks and network address
-  describing a different network than the prefix length did.
-- Members were renamed so that each name says what it holds, and so that they match `IPNetwork` where it has an
-  equivalent:
-
-  | Before              | After                 |
-  |---------------------|-----------------------|
-  | `Address`           | `NetworkAddress`      |
-  | `Length`            | `PrefixLength`        |
-  | `AddressLength`     | `AddressBitLength`    |
-  | `NetworkBits`       | `NetworkAddressBits`  |
-  | `Broadcast`         | `BroadcastAddress`    |
-  | `Mask`              | `NetworkMask`         |
-  | `Wildcard`          | `HostMask`            |
-  | `RemoveNetwork`     | `Exclude`             |
-  | `AddressAllocation.AutomaticPrivateIPAddressing` | `AddressAllocation.LinkLocal` |
-
-- The conversion from `string` to `NetworkPrefix` is explicit, because it throws for invalid text, and the implicit
-  conversion from `NetworkPrefix` to `string` was removed. Use `Parse` or a cast, and `ToString`.
-- For IPv6, which has no broadcast address, `LastHost`, `Hosts()` and `TotalHosts` now include the last address, and
-  only the subnet-router anycast address, which is the network address, is left out. A /64 has 2^64 - 1 hosts rather
-  than 2^64 - 2. The detail format no longer shows a broadcast row for IPv6.
-- `Parse` and `TryParse` no longer look up host names. Parsing a string made a blocking DNS query, which meant that
-  JSON or XML deserialization, and the implicit conversion from `string`, could reach the network. Host names are now
-  looked up only by the new `Resolve` and `ResolveAsync` methods.
+- Parsing no longer looks up host names. Parsing a string made a blocking DNS query, which meant that JSON or XML
+  deserialization, and the implicit conversion from `string`, could reach the network. Host names are now looked up
+  only by `IPNetwork.Resolve` and `IPNetwork.ResolveAsync`.
+- Parsing accepts only the standard dotted-decimal form of an IPv4 address and mask. See the first fix below.
 - `Exclude` follows set semantics. It returns an empty list when the excluded network covers the whole network, and
-  the network itself when the two do not overlap, where `RemoveNetwork` threw in both cases. It returns
-  `IReadOnlyList<NetworkPrefix>`.
-- `Summarize` returns the true minimal set: covered networks are dropped, and the result is sorted. It returns
-  `IReadOnlyList<NetworkPrefix>`.
+  the network itself when the two do not overlap, where `RemoveNetwork` threw in both cases.
+- `Summarize` returns the true minimal set: covered networks are dropped, and the result is sorted.
 - `Split(int)` throws `ArgumentOutOfRangeException` for an invalid target, and both `Split` overloads throw when they
   are called rather than when the result is first enumerated.
-- `ComplementaryPrefix` throws `InvalidOperationException` for a /0, rather than `ArgumentException`.
-- `FirstHost` and `LastHost` work for a /0, rather than throwing. `TotalHosts` already treated a /0 as a network with
-  hosts.
-- The constructors throw `ArgumentException` for an address that is not IPv4 or IPv6, rather than
-  `NotSupportedException`.
-- `GetContainingNetwork(IEnumerable<NetworkPrefix>)` throws `ArgumentException` for an empty sequence, rather than
+- `ComplementaryNetwork` throws `InvalidOperationException` for a /0, rather than `ArgumentException`.
+- `FirstHost` and `LastHost` work for a /0, rather than throwing.
+- For IPv6, which has no broadcast address, `LastHost`, `Hosts()` and `TotalHosts` include the last address, and only
+  the subnet-router anycast address, which is the network address, is left out. A /64 has 2^64 - 1 hosts rather than
+  2^64 - 2. The detail format no longer shows a broadcast row for IPv6.
+- `GetContainingNetwork(IEnumerable<IPNetwork>)` throws `ArgumentException` for an empty sequence, rather than
   `ArgumentNullException`.
-- `IXmlSerializable` is implemented explicitly, so its methods no longer appear on the class. An empty element throws
-  `XmlException` rather than `NullReferenceException`.
-- `NetworkPrefixJsonConverter` is `sealed`, and throws `JsonException` for a value that is not a string or not a
-  valid prefix.
-- The `[Serializable]` attribute was removed; .NET 10 no longer includes the binary formatter it was for.
+- Networks that the extension members return have no IPv6 scope ID.
 
 ### Added
 
-- Extension members on `System.Net.IPNetwork`, using C# 14 extension members, that provide the features of
-  `NetworkPrefix`: masks, broadcast and host addresses, totals, `Contains(IPNetwork)` and the other containment tests,
-  `Overlaps`, `Addresses`, `Hosts`, `Split`, `GetSupernet`, `Exclude`, `Allocation`, `Class`, and
-  `ToString(NetworkFormat)`; and the static members `IPNetwork.Summarize`, `IPNetwork.GetContainingNetwork` and
-  `IPNetwork.Comparer`.
-- Implicit conversions between `NetworkPrefix` and `IPNetwork`, `ToIPNetwork`, `FromIPNetwork`, a constructor that
-  takes an `IPNetwork`, and `==` and `!=` between the two types.
-- `IPNetworkJsonConverter`, because System.Text.Json cannot serialize an `IPNetwork` without one.
-- JSON dictionary key support for `NetworkPrefix`.
-- `Overlaps`, `GetSupernet()`, `GetSupernet(int)`, `LastAddress`, `HostBitLength` and `IsHostPrefix`.
-- The `<=` and `>=` operators. The comparison operators now handle `null` the same way `CompareTo` does.
-- `IEquatable<NetworkPrefix>`, the non-generic `IComparable`, `IFormattable`, `IParsable<NetworkPrefix>` and
-  `ISpanParsable<NetworkPrefix>`, with `Parse` and `TryParse` overloads that take a `ReadOnlySpan<char>`. A
-  `NetworkFormat` name can be used as a format string, as in `$"{prefix:AddressAndMask}"`.
+- `IPNetwork.Comparer`, because `IPNetwork` does not implement `IComparable` and sorting it otherwise throws.
+- `IPNetworkJsonConverter`, because System.Text.Json cannot serialize an `IPNetwork` without one. It also supports
+  networks as dictionary keys.
+- `Overlaps`, `GetSupernet()`, `GetSupernet(int)`, `LastAddress`, `HostBitLength`, `IsHostNetwork`, `FromAddress` and
+  `FromMask`.
+- The `<=` and `>=` operators.
 - `NetworkFormat.AddressAndHostMask`, the address and wildcard form used by Cisco access control lists.
 - IPv6 allocations, which were all `Undefined`, and the `SharedAddressSpace`, `Documentation`, `Benchmarking` and
   `Unspecified` allocations.
@@ -84,8 +87,7 @@ library's features to `System.Net.IPNetwork`. Backwards compatibility was not a 
 
 - Parsing accepted every IPv4 form that `IPAddress` accepts, including shorthand such as `10.0.0`, whole numbers and
   hexadecimal, and read a number with a leading zero as octal, so `010.0.0.0/8` parsed as `8.0.0.0/8`. The octal
-  reading is a known source of security bugs. Only the standard form of four decimal numbers without leading zeros is
-  now accepted, for both addresses and masks.
+  reading is a known source of security bugs. `IPNetwork.Parse` still reads text this way; `ParseStrict` does not.
 - Converting an IPv4 address to an `IPAddress` wrote 16 bytes into a 4 byte array, past the end of the array. This
   could corrupt whatever object followed it in memory.
 - `TryParse` threw, rather than returning `false`, for a prefix length out of range, such as `10.0.0.0/33`, a negative
@@ -98,26 +100,26 @@ library's features to `System.Net.IPNetwork`. Backwards compatibility was not a 
 - `GetContainingNetwork` returned the IPv4 network `0.0.0.0/0` when either IPv6 input was a /0.
 - `Summarize` threw `ArgumentException` when the input held a duplicate, or held a network together with both of its
   halves, and kept networks that were covered by another network in the input.
-- `Addresses()` and `Hosts()` never ended for a prefix that includes the last IPv6 address,
+- `Addresses()` and `Hosts()` never ended for a network that includes the last IPv6 address,
   `ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff`, because the counter wrapped around to `::`.
-- `Split(128)` on `::/0` returned a single prefix, because the number of subnets, 2^128, overflowed.
-- The constructors threw `IndexOutOfRangeException` for a negative prefix length.
-- `ToString(NetworkFormat.Detail)` showed a host count of `01` for a host prefix and `02` for a point-to-point prefix.
-- `<` and `>` threw `NullReferenceException` when either side was `null`.
+- `Split(128)` on `::/0` returned a single network, because the number of subnets, 2^128, overflowed.
+- `ToString(NetworkFormat.Detail)` showed a host count of `01` for a host network and `02` for a point-to-point
+  network.
 
 ### Migration
 
-- Apply the renames in the table above.
-- Replace `Parse` or `TryParse` calls that pass a host name with `Resolve` or `ResolveAsync`.
-- Replace implicit conversions from text with `Parse` or an explicit cast, and implicit conversions to text with
-  `ToString`.
-- Write IPv4 addresses in the standard dotted-decimal form; text such as `10.0.0/24` or `010.0.0.0/8` is rejected.
-- Expect IPv6 host ranges and counts to include the last address.
-- Replace `RemoveNetwork` with `Exclude`, and remove any handling of the exceptions it threw for an equal, containing
-  or disjoint network.
+- Apply the mappings in the table above, and import the `Bitvantage.InternetProtocol` namespace wherever the members
+  are used.
+- Parse untrusted text with `IPNetwork.ParseStrict` rather than `IPNetwork.Parse`, and write IPv4 addresses in the
+  standard dotted-decimal form; text such as `10.0.0/24` or `010.0.0.0/8` is rejected.
+- Replace parsing of host names with `IPNetwork.Resolve` or `IPNetwork.ResolveAsync`.
+- Pass `IPNetwork.Comparer` when sorting networks or creating a sorted collection of them.
+- Register `IPNetworkJsonConverter` in the serializer options, or apply it to each network property.
+- Replace XML serialization of a network with a `string` property.
+- Remove any handling of the exceptions that `RemoveNetwork` threw for an equal, containing or disjoint network.
 - If you relied on `Summarize` keeping covered networks, or on the order it returned, adjust for the sorted minimal
   result.
-- Catch `ArgumentOutOfRangeException` rather than `InvalidOperationException` for an invalid `Split(int)` target.
+- Expect IPv6 host ranges and counts to include the last address.
 
 ## [2.0.0] - 2026-08-19
 

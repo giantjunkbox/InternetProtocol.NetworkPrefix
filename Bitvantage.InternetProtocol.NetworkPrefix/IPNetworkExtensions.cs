@@ -22,77 +22,191 @@ using System.Numerics;
 namespace Bitvantage.InternetProtocol;
 
 /// <summary>
-///     Adds the functionality of <see cref="NetworkPrefix" /> to <see cref="IPNetwork" />.
+///     Extension members that add network arithmetic to <see cref="IPNetwork" />: masks, host ranges, containment between
+///     networks, splitting, supernets, exclusion, summarization, sort order, classification, strict parsing and formatting.
 /// </summary>
 /// <remarks>
 ///     <para>
-///         <see cref="IPNetwork" /> holds a network address and a prefix length and can test whether an address is a member, but
-///         has no masks, host ranges, containment between networks, splitting, summarization or sort order. These extension
-///         members provide them, with the same names and behavior as on <see cref="NetworkPrefix" />, so that code which already
-///         uses <see cref="IPNetwork" /> does not need to convert.
+///         <see cref="IPNetwork" /> holds a base address and a prefix length, and can parse a network and test whether an
+///         address is in it. These members add the rest. They are C# 14 extension members, so the properties, operators and
+///         static members appear on <see cref="IPNetwork" /> itself once the <c>Bitvantage.InternetProtocol</c> namespace is
+///         imported.
 ///     </para>
 ///     <code>
-///     var network = IPNetwork.Parse("10.0.0.0/24");
-///     var mask = network.NetworkMask;                         // 255.255.255.0
-///     var halves = network.Split();                           // 10.0.0.0/25, 10.0.0.128/25
+///     using Bitvantage.InternetProtocol;
+///
+///     var network = IPNetwork.ParseStrict("10.0.0.0/24");
+///     var mask = network.NetworkMask;                   // 255.255.255.0
+///     var halves = network.Split();                     // 10.0.0.0/25, 10.0.0.128/25
 ///     var sorted = networks.Order(IPNetwork.Comparer);
 ///     </code>
+///     <para>
+///         The networks that these members return never have an IPv6 scope ID, because a scope ID identifies a network
+///         interface rather than part of an address.
+///     </para>
 /// </remarks>
-public static class IPNetworkExtensions
+public static partial class IPNetworkExtensions
 {
     /// <param name="network">The network.</param>
     extension(IPNetwork network)
     {
-        /// <inheritdoc cref="NetworkPrefix.AddressBitLength" />
-        public int AddressBitLength => network.ToNetworkPrefix().AddressBitLength;
+        /// <summary>
+        ///     The number of bits in an address of the network's IP version: 32 for IPv4, or 128 for IPv6.
+        /// </summary>
+        public int AddressBitLength => NetworkBits.FromIPNetwork(network).AddressBitLength;
 
-        /// <inheritdoc cref="NetworkPrefix.Allocation" />
-        public AddressAllocation Allocation => network.ToNetworkPrefix().Allocation;
+        /// <summary>
+        ///     The base address, which is the network address, as an unsigned integer whose most significant bit is the first
+        ///     bit of the address. IPv4 addresses occupy the low 32 bits.
+        /// </summary>
+        public UInt128 BaseAddressBits => NetworkBits.FromIPNetwork(network).BaseAddressBits;
 
-        /// <inheritdoc cref="NetworkPrefix.BroadcastAddress" />
-        public IPAddress BroadcastAddress => network.ToNetworkPrefix().BroadcastAddress;
+        /// <summary>
+        ///     The last address in the network, in which every host bit is set. For example, <c>10.0.0.255</c> for <c>10.0.0.0/24</c>.
+        /// </summary>
+        /// <remarks>
+        ///     IPv6 has no broadcast address. For an IPv6 network this is simply the last address, the same as
+        ///     <c>LastAddress</c>, and it can be assigned to a host.
+        /// </remarks>
+        public IPAddress BroadcastAddress => network.LastAddress;
 
-        /// <inheritdoc cref="NetworkPrefix.Class" />
-        public NetworkClass Class => network.ToNetworkPrefix().Class;
-
-        /// <inheritdoc cref="NetworkPrefix.ComplementaryPrefix" />
-        public IPNetwork ComplementaryPrefix => network.ToNetworkPrefix().ComplementaryPrefix;
-
-        /// <inheritdoc cref="NetworkPrefix.FirstHost" />
-        public IPAddress FirstHost => network.ToNetworkPrefix().FirstHost;
-
-        /// <inheritdoc cref="NetworkPrefix.HostBitLength" />
-        public int HostBitLength => network.ToNetworkPrefix().HostBitLength;
-
-        /// <inheritdoc cref="NetworkPrefix.HostMask" />
-        public IPAddress HostMask => network.ToNetworkPrefix().HostMask;
-
-        /// <inheritdoc cref="NetworkPrefix.IsHostPrefix" />
-        public bool IsHostPrefix => network.ToNetworkPrefix().IsHostPrefix;
-
-        /// <inheritdoc cref="NetworkPrefix.LastAddress" />
-        public IPAddress LastAddress => network.ToNetworkPrefix().LastAddress;
-
-        /// <inheritdoc cref="NetworkPrefix.LastHost" />
-        public IPAddress LastHost => network.ToNetworkPrefix().LastHost;
-
-        /// <inheritdoc cref="NetworkPrefix.NetworkMask" />
-        public IPAddress NetworkMask => network.ToNetworkPrefix().NetworkMask;
-
-        /// <inheritdoc cref="NetworkPrefix.TotalAddresses" />
-        public BigInteger TotalAddresses => network.ToNetworkPrefix().TotalAddresses;
-
-        /// <inheritdoc cref="NetworkPrefix.TotalHosts" />
-        public UInt128 TotalHosts => network.ToNetworkPrefix().TotalHosts;
-
-        /// <inheritdoc cref="NetworkPrefix.Version" />
-        public IPVersion Version => network.ToNetworkPrefix().Version;
-
-        /// <inheritdoc cref="NetworkPrefix.Addresses" />
-        public IEnumerable<IPAddress> Addresses()
+        /// <summary>
+        ///     The other half of this network's supernet: the network of the same length whose base address differs only in its
+        ///     last network bit. For example, the complementary network of <c>10.1.2.0/25</c> is <c>10.1.2.128/25</c>, and the
+        ///     other way round.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">Thrown when the prefix length is 0, since such a network spans every address.</exception>
+        public IPNetwork ComplementaryNetwork
         {
-            return network.ToNetworkPrefix().Addresses();
+            get
+            {
+                var networkBits = NetworkBits.FromIPNetwork(network);
+                if (networkBits.PrefixLength == 0)
+                    throw new InvalidOperationException($"{network} spans every address of its version and has no complementary network.");
+
+                return networkBits.ComplementaryNetwork.ToIPNetwork();
+            }
         }
+
+        /// <summary>
+        ///     The first address in the network that can be assigned to a host.
+        /// </summary>
+        /// <remarks>
+        ///     This is the address after the network address. For IPv4 the network address identifies the network, and for IPv6
+        ///     it is the subnet-router anycast address (RFC 4291). The exceptions are a /31 or /127 point-to-point network
+        ///     (RFC 3021 and RFC 6164), where both addresses are usable, and a host network, which holds just one address.
+        /// </remarks>
+        public IPAddress FirstHost
+        {
+            get
+            {
+                var networkBits = NetworkBits.FromIPNetwork(network);
+                return networkBits.ToIPAddress(networkBits.FirstHostBits);
+            }
+        }
+
+        /// <summary>
+        ///     The number of bits of an address that identify a host within the network: <c>AddressBitLength</c>
+        ///     minus <see cref="IPNetwork.PrefixLength" />.
+        /// </summary>
+        public int HostBitLength => NetworkBits.FromIPNetwork(network).HostBitLength;
+
+        /// <summary>
+        ///     The host mask, which has a one in every bit that identifies a host. For example, <c>0.0.0.255</c> for a /24.
+        /// </summary>
+        /// <remarks>
+        ///     The host mask is the inverse of the <c>NetworkMask</c>, and Cisco access control lists call it a
+        ///     wildcard mask.
+        /// </remarks>
+        public IPAddress HostMask
+        {
+            get
+            {
+                var networkBits = NetworkBits.FromIPNetwork(network);
+                return networkBits.ToIPAddress(networkBits.HostMaskBits);
+            }
+        }
+
+        /// <summary>
+        ///     The host mask in integer form. See <c>HostMask</c>.
+        /// </summary>
+        public UInt128 HostMaskBits => NetworkBits.FromIPNetwork(network).HostMaskBits;
+
+        /// <summary>
+        ///     Gets whether this is a host network, a /32 or a /128, which holds a single address.
+        /// </summary>
+        public bool IsHostNetwork => NetworkBits.FromIPNetwork(network).IsHostNetwork;
+
+        /// <summary>
+        ///     The last address in the network, in which every host bit is set. For example, <c>10.0.0.255</c> for <c>10.0.0.0/24</c>.
+        /// </summary>
+        public IPAddress LastAddress
+        {
+            get
+            {
+                var networkBits = NetworkBits.FromIPNetwork(network);
+                return networkBits.ToIPAddress(networkBits.LastAddressBits);
+            }
+        }
+
+        /// <summary>
+        ///     The last address in the network that can be assigned to a host.
+        /// </summary>
+        /// <remarks>
+        ///     For IPv4 this is the address before the broadcast address, except for a /31 point-to-point network (RFC 3021), where
+        ///     both addresses are usable, and a /32 host network. IPv6 has no broadcast address, so for IPv6 this is the last
+        ///     address.
+        /// </remarks>
+        public IPAddress LastHost
+        {
+            get
+            {
+                var networkBits = NetworkBits.FromIPNetwork(network);
+                return networkBits.ToIPAddress(networkBits.LastHostBits);
+            }
+        }
+
+        /// <summary>
+        ///     The network mask, also called the subnet mask, which has a one in every bit that identifies the network. For
+        ///     example, <c>255.255.255.0</c> for a /24.
+        /// </summary>
+        public IPAddress NetworkMask
+        {
+            get
+            {
+                var networkBits = NetworkBits.FromIPNetwork(network);
+                return networkBits.ToIPAddress(networkBits.NetworkMaskBits);
+            }
+        }
+
+        /// <summary>
+        ///     The network mask in integer form. See <c>NetworkMask</c>.
+        /// </summary>
+        public UInt128 NetworkMaskBits => NetworkBits.FromIPNetwork(network).NetworkMaskBits;
+
+        /// <summary>
+        ///     The total number of addresses in the network, including the network and broadcast addresses.
+        /// </summary>
+        /// <remarks>
+        ///     The count is a <see cref="BigInteger" /> because the 2^128 addresses of <c>::/0</c> do not fit in a <see cref="UInt128" />.
+        /// </remarks>
+        public BigInteger TotalAddresses => (BigInteger)NetworkBits.FromIPNetwork(network).HostMaskBits + BigInteger.One;
+
+        /// <summary>
+        ///     The number of addresses in the network that can be assigned to a host, from <c>FirstHost</c> to
+        ///     <c>LastHost</c>.
+        /// </summary>
+        /// <remarks>
+        ///     For IPv4 this excludes the network and broadcast addresses. For IPv6 it excludes only the subnet-router anycast
+        ///     address, since IPv6 has no broadcast address. A /31 or /127 point-to-point network and a host network have no
+        ///     excluded addresses.
+        /// </remarks>
+        public UInt128 TotalHosts => NetworkBits.FromIPNetwork(network).TotalHosts;
+
+        /// <summary>
+        ///     The version of the Internet Protocol of the network.
+        /// </summary>
+        public IPVersion Version => NetworkBits.FromIPNetwork(network).Version;
 
         /// <summary>
         ///     Determines whether this network is strictly contained by another network: it is a smaller network inside the other.
@@ -101,7 +215,7 @@ public static class IPNetworkExtensions
         /// <returns><see langword="true" /> when <paramref name="other" /> contains this network and is not equal to it.</returns>
         public bool ContainedBy(IPNetwork other)
         {
-            return network.ToNetworkPrefix().ContainedBy(other.ToNetworkPrefix());
+            return other.Contains(network);
         }
 
         /// <summary>
@@ -111,174 +225,52 @@ public static class IPNetworkExtensions
         /// <returns><see langword="true" /> when every address of this network is in <paramref name="other" />.</returns>
         public bool ContainedByOrEqual(IPNetwork other)
         {
-            return network.ToNetworkPrefix().ContainedByOrEqual(other.ToNetworkPrefix());
+            return other.ContainsOrEqual(network);
         }
 
         /// <summary>
         ///     Determines whether this network strictly contains another network: the other is a smaller network inside this one.
         /// </summary>
+        /// <remarks>
+        ///     A network does not strictly contain itself; use <c>ContainsOrEqual</c> to include that case.
+        ///     A network of the other IP version is never contained. To test whether an address is in the network, use
+        ///     <see cref="IPNetwork.Contains(IPAddress)" />.
+        /// </remarks>
         /// <param name="other">The network that might be contained.</param>
         /// <returns><see langword="true" /> when this network contains <paramref name="other" /> and is not equal to it.</returns>
         public bool Contains(IPNetwork other)
         {
-            return network.ToNetworkPrefix().Contains(other.ToNetworkPrefix());
+            var networkBits = NetworkBits.FromIPNetwork(network);
+            var otherBits = NetworkBits.FromIPNetwork(other);
+
+            // a strictly contained network has a longer prefix, which rules out the equal case
+            return networkBits.PrefixLength < otherBits.PrefixLength && networkBits.ContainsOrEqual(otherBits);
         }
 
         /// <summary>
-        ///     Determines whether this network contains another network or is equal to it.
+        ///     Determines whether this network contains another network or is equal to it. A network of the other IP version is
+        ///     never contained.
         /// </summary>
         /// <param name="other">The network that might be contained.</param>
         /// <returns><see langword="true" /> when every address of <paramref name="other" /> is in this network.</returns>
         public bool ContainsOrEqual(IPNetwork other)
         {
-            return network.ToNetworkPrefix().ContainsOrEqual(other.ToNetworkPrefix());
+            return NetworkBits.FromIPNetwork(network).ContainsOrEqual(NetworkBits.FromIPNetwork(other));
         }
 
         /// <summary>
-        ///     Computes the set difference of this network and another: the smallest list of networks that covers every address of
-        ///     this network that is not in <paramref name="networkToExclude" />. See <see cref="NetworkPrefix.Exclude" />.
-        /// </summary>
-        /// <param name="networkToExclude">The network to remove from this one.</param>
-        /// <returns>The networks that remain.</returns>
-        public IReadOnlyList<IPNetwork> Exclude(IPNetwork networkToExclude)
-        {
-            return network.ToNetworkPrefix()
-                .Exclude(networkToExclude.ToNetworkPrefix())
-                .Select(remainingNetwork => remainingNetwork.ToIPNetwork())
-                .ToArray();
-        }
-
-        /// <inheritdoc cref="NetworkPrefix.GetSupernet()" />
-        public IPNetwork GetSupernet()
-        {
-            return network.ToNetworkPrefix().GetSupernet();
-        }
-
-        /// <inheritdoc cref="NetworkPrefix.GetSupernet(int)" />
-        public IPNetwork GetSupernet(int prefixLength)
-        {
-            return network.ToNetworkPrefix().GetSupernet(prefixLength);
-        }
-
-        /// <inheritdoc cref="NetworkPrefix.Hosts" />
-        public IEnumerable<IPAddress> Hosts()
-        {
-            return network.ToNetworkPrefix().Hosts();
-        }
-
-        /// <summary>
-        ///     Determines whether this network and another network share at least one address.
+        ///     Determines whether this network and another network share at least one address, which happens when one contains or
+        ///     is equal to the other.
         /// </summary>
         /// <param name="other">The other network.</param>
         /// <returns><see langword="true" /> when the two networks overlap.</returns>
         public bool Overlaps(IPNetwork other)
         {
-            return network.ToNetworkPrefix().Overlaps(other.ToNetworkPrefix());
-        }
+            var networkBits = NetworkBits.FromIPNetwork(network);
+            var otherBits = NetworkBits.FromIPNetwork(other);
 
-        /// <inheritdoc cref="NetworkPrefix.Split()" />
-        public IEnumerable<IPNetwork> Split()
-        {
-            return network.ToNetworkPrefix().Split().Select(subnet => subnet.ToIPNetwork());
-        }
-
-        /// <inheritdoc cref="NetworkPrefix.Split(int)" />
-        public IEnumerable<IPNetwork> Split(int prefixLength)
-        {
-            return network.ToNetworkPrefix().Split(prefixLength).Select(subnet => subnet.ToIPNetwork());
-        }
-
-        /// <summary>
-        ///     Converts this network to a <see cref="NetworkPrefix" />.
-        /// </summary>
-        /// <returns>A new prefix with the same network address and prefix length.</returns>
-        public NetworkPrefix ToNetworkPrefix()
-        {
-            return new NetworkPrefix(network);
-        }
-
-        /// <inheritdoc cref="NetworkPrefix.ToString(NetworkFormat)" />
-        public string ToString(NetworkFormat format)
-        {
-            return network.ToNetworkPrefix().ToString(format);
-        }
-    }
-
-    extension(IPNetwork)
-    {
-        /// <summary>
-        ///     A comparer that sorts networks in the same order as <see cref="NetworkPrefix.CompareTo(NetworkPrefix)" />: IPv4 before
-        ///     IPv6, then by network address, then the bigger network first. <see cref="IPNetwork" /> does not implement
-        ///     <see cref="IComparable{T}" />, so pass this to sorting methods, as in <c>networks.Order(IPNetwork.Comparer)</c>.
-        /// </summary>
-        public static IComparer<IPNetwork> Comparer => IPNetworkComparer.Instance;
-
-        /// <summary>
-        ///     Computes the smallest network that contains two networks. See
-        ///     <see cref="NetworkPrefix.GetContainingNetwork(NetworkPrefix, NetworkPrefix)" />.
-        /// </summary>
-        /// <param name="first">The first network.</param>
-        /// <param name="second">The second network.</param>
-        /// <returns>The smallest network that contains both networks.</returns>
-        /// <exception cref="ArgumentException">Thrown when the networks are different IP versions.</exception>
-        public static IPNetwork GetContainingNetwork(IPNetwork first, IPNetwork second)
-        {
-            return NetworkPrefix.GetContainingNetwork(first.ToNetworkPrefix(), second.ToNetworkPrefix());
-        }
-
-        /// <summary>
-        ///     Computes the smallest network that contains every one of a set of networks. See
-        ///     <see cref="NetworkPrefix.GetContainingNetwork(IEnumerable{NetworkPrefix})" />.
-        /// </summary>
-        /// <param name="networks">The networks, which must all be the same IP version.</param>
-        /// <returns>The smallest network that contains every network.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="networks" /> is <see langword="null" />.</exception>
-        /// <exception cref="ArgumentException">Thrown when <paramref name="networks" /> is empty or mixes IP versions.</exception>
-        public static IPNetwork GetContainingNetwork(IEnumerable<IPNetwork> networks)
-        {
-            ArgumentNullException.ThrowIfNull(networks);
-
-            return NetworkPrefix.GetContainingNetwork(networks.Select(network => network.ToNetworkPrefix()));
-        }
-
-        /// <summary>
-        ///     Summarizes a set of networks into the fewest networks that cover exactly the same addresses. See
-        ///     <see cref="NetworkPrefix.Summarize" />.
-        /// </summary>
-        /// <param name="networks">The networks to summarize.</param>
-        /// <returns>The summarized networks, sorted.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="networks" /> is <see langword="null" />.</exception>
-        public static IReadOnlyList<IPNetwork> Summarize(IEnumerable<IPNetwork> networks)
-        {
-            ArgumentNullException.ThrowIfNull(networks);
-
-            return NetworkPrefix
-                .Summarize(networks.Select(network => network.ToNetworkPrefix()))
-                .Select(summarizedNetwork => summarizedNetwork.ToIPNetwork())
-                .ToArray();
-        }
-    }
-
-    /// <summary>
-    ///     Sorts <see cref="IPNetwork" /> values in the same order as <see cref="NetworkPrefix" />.
-    /// </summary>
-    private sealed class IPNetworkComparer : IComparer<IPNetwork>
-    {
-        /// <summary>
-        ///     The single instance of the comparer, which has no state.
-        /// </summary>
-        internal static readonly IPNetworkComparer Instance = new();
-
-        /// <inheritdoc />
-        public int Compare(IPNetwork first, IPNetwork second)
-        {
-            // compare the parts directly rather than converting each network to a NetworkPrefix, since sorting compares often
-            var firstVersion = AddressBits.GetVersion(first.BaseAddress.AddressFamily);
-            var secondVersion = AddressBits.GetVersion(second.BaseAddress.AddressFamily);
-
-            return NetworkPrefix.Compare(
-                firstVersion, AddressBits.FromIPAddress(first.BaseAddress), first.PrefixLength,
-                secondVersion, AddressBits.FromIPAddress(second.BaseAddress), second.PrefixLength);
+            // two networks can't partly overlap; either they are disjoint, or one of them lies entirely within the other
+            return networkBits.ContainsOrEqual(otherBits) || otherBits.ContainsOrEqual(networkBits);
         }
     }
 }

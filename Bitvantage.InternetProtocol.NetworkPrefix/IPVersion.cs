@@ -24,7 +24,7 @@ namespace Bitvantage.InternetProtocol;
 public enum IPVersion
 {
     /// <summary>
-    ///     No version. A <see cref="NetworkPrefix" /> never has this version.
+    ///     No version. A network always has a version other than this.
     /// </summary>
     Undefined = 0,
 

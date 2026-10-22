@@ -28,15 +28,19 @@ namespace Bitvantage.InternetProtocol.Converters;
 /// <remarks>
 ///     <para>
 ///         System.Text.Json has no built-in support for <see cref="IPNetwork" />, and serializing one without a converter fails.
-///         Register this converter to fix that:
+///         Register this converter for every network in a serialization, or apply it to a single property with
+///         <see cref="JsonConverterAttribute" />:
 ///     </para>
 ///     <code>
 ///     var options = new JsonSerializerOptions();
 ///     options.Converters.Add(new IPNetworkJsonConverter());
+///
+///     [JsonConverter(typeof(IPNetworkJsonConverter))]
+///     public IPNetwork Network { get; set; }
 ///     </code>
 ///     <para>
-///         It reads every format that <see cref="NetworkPrefix.Parse(string)" /> accepts, and supports networks as the keys of
-///         a dictionary.
+///         It reads every format that <c>IPNetwork.ParseStrict</c> accepts, rejects the nonstandard IPv4 forms that it rejects,
+///         and supports networks as the keys of a dictionary.
 ///     </para>
 /// </remarks>
 public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
@@ -54,7 +58,7 @@ public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
         if (reader.TokenType != JsonTokenType.String)
             throw new JsonException($"A network must be a JSON string, such as \"10.0.0.0/24\", but the value is a {reader.TokenType}.");
 
-        return NetworkPrefixJsonConverter.ParsePrefix(reader.GetString()).ToIPNetwork();
+        return ParseNetwork(reader.GetString());
     }
 
     /// <summary>
@@ -67,7 +71,7 @@ public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
     /// <exception cref="JsonException">Thrown when the property name is not a valid network.</exception>
     public override IPNetwork ReadAsPropertyName(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
-        return NetworkPrefixJsonConverter.ParsePrefix(reader.GetString()).ToIPNetwork();
+        return ParseNetwork(reader.GetString());
     }
 
     /// <summary>
@@ -78,7 +82,7 @@ public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
     /// <param name="options">The serializer options.</param>
     public override void Write(Utf8JsonWriter writer, IPNetwork value, JsonSerializerOptions options)
     {
-        writer.WriteStringValue(value.ToString());
+        writer.WriteStringValue(value.ToString(NetworkFormat.AddressAndPrefix));
     }
 
     /// <summary>
@@ -89,6 +93,21 @@ public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
     /// <param name="options">The serializer options.</param>
     public override void WriteAsPropertyName(Utf8JsonWriter writer, IPNetwork value, JsonSerializerOptions options)
     {
-        writer.WritePropertyName(value.ToString());
+        writer.WritePropertyName(value.ToString(NetworkFormat.AddressAndPrefix));
+    }
+
+    /// <summary>
+    ///     Parses the text of a JSON string or property name as a network.
+    /// </summary>
+    /// <param name="networkText">The text.</param>
+    /// <returns>The network.</returns>
+    /// <exception cref="JsonException">Thrown when the text is not a valid network.</exception>
+    private static IPNetwork ParseNetwork(string? networkText)
+    {
+        // a JsonException, rather than a FormatException, lets the serializer add the path of the bad value to the message
+        if (!IPNetwork.TryParseStrict(networkText, out var network))
+            throw new JsonException($"'{networkText}' is not a valid network.");
+
+        return network;
     }
 }

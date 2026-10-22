@@ -18,7 +18,7 @@
 		<AssemblyVersion>3.0.0</AssemblyVersion>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
-		<Description>A library for working with IPv4 and IPv6 network prefixes, which also extends System.Net.IPNetwork with masks, host ranges, containment, splitting and summarization.</Description>
+		<Description>Extends System.Net.IPNetwork with masks, host ranges, containment between networks, splitting, supernets, exclusion, summarization, sorting, classification, strict parsing and JSON serialization.</Description>
 		<RepositoryUrl>https://github.com/Bitvantage/InternetProtocol.NetworkPrefix.git</RepositoryUrl>
 		<Copyright>Copyright © Michael Crino 2024</Copyright>
 
