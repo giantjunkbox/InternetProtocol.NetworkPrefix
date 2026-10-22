@@ -56,7 +56,7 @@ public static partial class IPNetworkExtensions
     {
         // the table is ordered from the longest prefix to the shortest, so the first block found is the most specific one
         foreach (var (block, value) in table)
-            if (block.ContainsOrEqual(network))
+            if (block.IsSupernetOf(network))
                 return value;
 
         return defaultValue;

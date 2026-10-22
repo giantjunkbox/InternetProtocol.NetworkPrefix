@@ -33,6 +33,11 @@ notes.
   | `Wildcard`                                   | `HostMask`                                           |
   | `Broadcast`                                  | `BroadcastAddress`                                   |
   | `ComplementaryPrefix`                        | `ComplementaryNetwork`                               |
+  | `Contains(NetworkPrefix)`                    | `IsProperSupernetOf`                                 |
+  | `ContainsOrEqual`                            | `IsSupernetOf`                                       |
+  | `ContainedBy`                                | `IsProperSubnetOf`                                   |
+  | `ContainedByOrEqual`                         | `IsSubnetOf`                                         |
+  | `Contains(IPAddress)`                        | the built-in `IPNetwork.Contains(IPAddress)`         |
   | `RemoveNetwork(network)`                     | `Exclude(network)`                                   |
   | `GetContainingNetwork(other)`                | `IPNetwork.GetContainingNetwork(network, other)`     |
   | `NetworkPrefix.GetContainingNetwork(...)`    | `IPNetwork.GetContainingNetwork(...)`                |
@@ -43,9 +48,12 @@ notes.
   | XML serialization                            | none; serialize a `string` instead                   |
 
   `NetworkMaskBits`, `HostMaskBits`, `FirstHost`, `LastHost`, `TotalHosts`, `TotalAddresses`, `Version`,
-  `Allocation`, `Class`, `Contains`, `ContainsOrEqual`, `ContainedBy`, `ContainedByOrEqual`, `Addresses`, `Hosts`,
-  `Split`, `ToString(NetworkFormat)` and the `+`, `-`, `<` and `>` operators keep their names. Equality and hashing are
-  those of `IPNetwork`.
+  `Allocation`, `Class`, `Addresses`, `Hosts`, `Split`, `ToString(NetworkFormat)` and the `+`, `-`, `<` and `>`
+  operators keep their names. Equality and hashing are those of `IPNetwork`.
+
+  The containment methods take the names of .NET's set methods, such as `HashSet<T>.IsSubsetOf`, where the plain name
+  includes the equal case and the "proper" name excludes it. The new names also can't collide with a `Contains`
+  overload that a future .NET might add to `IPNetwork`, which would silently take precedence over an extension method.
 
 - `AddressAllocation.AutomaticPrivateIPAddressing` is now `AddressAllocation.LinkLocal`, since it also covers IPv6.
 

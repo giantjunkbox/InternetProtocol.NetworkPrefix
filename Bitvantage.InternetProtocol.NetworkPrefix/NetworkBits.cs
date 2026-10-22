@@ -167,12 +167,12 @@ internal readonly record struct NetworkBits : IComparable<NetworkBits>
     }
 
     /// <summary>
-    ///     Determines whether this network contains another network or is equal to it. A network of the other IP version is never
-    ///     contained.
+    ///     Determines whether this network is a supernet of another network: every address of the other is in this network. A
+    ///     network is a supernet of itself, and a network of the other IP version is never a subnet.
     /// </summary>
     /// <param name="other">The network that might be contained.</param>
     /// <returns><see langword="true" /> when every address of <paramref name="other" /> is in this network.</returns>
-    public bool ContainsOrEqual(NetworkBits other)
+    public bool IsSupernetOf(NetworkBits other)
     {
         if (Version != other.Version)
             return false;

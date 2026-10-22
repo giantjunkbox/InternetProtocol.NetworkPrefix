@@ -18,12 +18,13 @@
 
 using System.Net;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace Bitvantage.InternetProtocol;
 
 /// <summary>
-///     Extension members that add network arithmetic to <see cref="IPNetwork" />: masks, host ranges, containment between
-///     networks, splitting, supernets, exclusion, summarization, sort order, classification, strict parsing and formatting.
+///     Extension members that add network arithmetic to <see cref="IPNetwork" />: masks, host ranges, subnet and
+///     supernet tests, splitting, supernets, exclusion, summarization, sort order, classification, strict parsing and formatting.
 /// </summary>
 /// <remarks>
 ///     <para>
@@ -43,6 +44,13 @@ namespace Bitvantage.InternetProtocol;
 ///     <para>
 ///         The networks that these members return never have an IPv6 scope ID, because a scope ID identifies a network
 ///         interface rather than part of an address.
+///     </para>
+///     <para>
+///         Each member converts its networks to integers on every call. The conversion takes a few nanoseconds and allocates
+///         nothing, so the subnet, supernet and overlap tests cost about as much as <see cref="IPNetwork.Contains(IPAddress)" />.
+///         Members that return an <see cref="IPAddress" />, such as <c>NetworkMask</c>, create a new address on every call,
+///         because an <see cref="IPAddress" /> can be changed and so can't be shared. In a hot loop, use the integer members
+///         <c>BaseAddressBits</c>, <c>NetworkMaskBits</c> and <c>HostMaskBits</c> instead.
 ///     </para>
 /// </remarks>
 public static partial class IPNetworkExtensions
@@ -209,68 +217,105 @@ public static partial class IPNetworkExtensions
         public IPVersion Version => NetworkBits.FromIPNetwork(network).Version;
 
         /// <summary>
-        ///     Determines whether this network is strictly contained by another network: it is a smaller network inside the other.
-        /// </summary>
-        /// <param name="other">The network that might contain this one.</param>
-        /// <returns><see langword="true" /> when <paramref name="other" /> contains this network and is not equal to it.</returns>
-        public bool ContainedBy(IPNetwork other)
-        {
-            return other.Contains(network);
-        }
-
-        /// <summary>
-        ///     Determines whether this network is contained by another network or is equal to it.
-        /// </summary>
-        /// <param name="other">The network that might contain this one.</param>
-        /// <returns><see langword="true" /> when every address of this network is in <paramref name="other" />.</returns>
-        public bool ContainedByOrEqual(IPNetwork other)
-        {
-            return other.ContainsOrEqual(network);
-        }
-
-        /// <summary>
-        ///     Determines whether this network strictly contains another network: the other is a smaller network inside this one.
+        ///     Determines whether this network is a proper subnet of another network: a smaller network inside the other, and not
+        ///     equal to it.
         /// </summary>
         /// <remarks>
-        ///     A network does not strictly contain itself; use <c>ContainsOrEqual</c> to include that case.
-        ///     A network of the other IP version is never contained. To test whether an address is in the network, use
-        ///     <see cref="IPNetwork.Contains(IPAddress)" />.
+        ///     The names follow <see cref="ISet{T}.IsProperSubsetOf" />. A network of the other IP version is never a subnet.
         /// </remarks>
-        /// <param name="other">The network that might be contained.</param>
+        /// <param name="other">The network that might contain this one.</param>
+        /// <returns><see langword="true" /> when <paramref name="other" /> contains this network and is not equal to it.</returns>
+        public bool IsProperSubnetOf(IPNetwork other)
+        {
+            // a proper subnet has a longer prefix, which rules out the equal case
+            return network.PrefixLength > other.PrefixLength && IsWithin(network, other);
+        }
+
+        /// <summary>
+        ///     Determines whether this network is a proper supernet of another network: the other is a smaller network inside this
+        ///     one, and not equal to it.
+        /// </summary>
+        /// <remarks>
+        ///     The names follow <see cref="ISet{T}.IsProperSupersetOf" />. A network of the other IP version is never a subnet. To
+        ///     test whether an address is in the network, use <see cref="IPNetwork.Contains(IPAddress)" />.
+        /// </remarks>
+        /// <param name="other">The network that might be inside this one.</param>
         /// <returns><see langword="true" /> when this network contains <paramref name="other" /> and is not equal to it.</returns>
-        public bool Contains(IPNetwork other)
+        public bool IsProperSupernetOf(IPNetwork other)
         {
-            var networkBits = NetworkBits.FromIPNetwork(network);
-            var otherBits = NetworkBits.FromIPNetwork(other);
-
-            // a strictly contained network has a longer prefix, which rules out the equal case
-            return networkBits.PrefixLength < otherBits.PrefixLength && networkBits.ContainsOrEqual(otherBits);
+            // a proper subnet has a longer prefix, which rules out the equal case
+            return other.PrefixLength > network.PrefixLength && IsWithin(other, network);
         }
 
         /// <summary>
-        ///     Determines whether this network contains another network or is equal to it. A network of the other IP version is
-        ///     never contained.
+        ///     Determines whether this network is a subnet of another network: every address of this network is in the other. A
+        ///     network is a subnet of itself.
         /// </summary>
-        /// <param name="other">The network that might be contained.</param>
+        /// <remarks>
+        ///     The names follow <see cref="ISet{T}.IsSubsetOf" />. A network of the other IP version is never a subnet.
+        /// </remarks>
+        /// <param name="other">The network that might contain this one.</param>
+        /// <returns><see langword="true" /> when every address of this network is in <paramref name="other" />.</returns>
+        public bool IsSubnetOf(IPNetwork other)
+        {
+            return IsWithin(network, other);
+        }
+
+        /// <summary>
+        ///     Determines whether this network is a supernet of another network: every address of the other is in this network. A
+        ///     network is a supernet of itself.
+        /// </summary>
+        /// <remarks>
+        ///     The names follow <see cref="ISet{T}.IsSupersetOf" />. A network of the other IP version is never a subnet. To test
+        ///     whether an address is in the network, use <see cref="IPNetwork.Contains(IPAddress)" />.
+        /// </remarks>
+        /// <param name="other">The network that might be inside this one.</param>
         /// <returns><see langword="true" /> when every address of <paramref name="other" /> is in this network.</returns>
-        public bool ContainsOrEqual(IPNetwork other)
+        public bool IsSupernetOf(IPNetwork other)
         {
-            return NetworkBits.FromIPNetwork(network).ContainsOrEqual(NetworkBits.FromIPNetwork(other));
+            return IsWithin(other, network);
         }
 
         /// <summary>
-        ///     Determines whether this network and another network share at least one address, which happens when one contains or
-        ///     is equal to the other.
+        ///     Determines whether this network and another network share at least one address, which happens when one is a subnet
+        ///     of the other.
         /// </summary>
+        /// <remarks>
+        ///     The name follows <see cref="ISet{T}.Overlaps" />.
+        /// </remarks>
         /// <param name="other">The other network.</param>
         /// <returns><see langword="true" /> when the two networks overlap.</returns>
         public bool Overlaps(IPNetwork other)
         {
-            var networkBits = NetworkBits.FromIPNetwork(network);
-            var otherBits = NetworkBits.FromIPNetwork(other);
-
-            // two networks can't partly overlap; either they are disjoint, or one of them lies entirely within the other
-            return networkBits.ContainsOrEqual(otherBits) || otherBits.ContainsOrEqual(networkBits);
+            // two networks can't partly overlap; either they are disjoint, or one of them lies entirely within the other. Only
+            // the network with the longer prefix can lie within the other, so only one of these tests converts any addresses
+            return IsWithin(network, other) || IsWithin(other, network);
         }
+    }
+
+    /// <summary>
+    ///     Determines whether every address of one network is in another. This is the test behind the subnet, supernet and
+    ///     overlap members, which are often called in loops.
+    /// </summary>
+    /// <param name="innerNetwork">The network that might be inside the other.</param>
+    /// <param name="outerNetwork">The network that might contain the other.</param>
+    /// <returns><see langword="true" /> when <paramref name="innerNetwork" /> is a subnet of <paramref name="outerNetwork" />, or equal to it.</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool IsWithin(IPNetwork innerNetwork, IPNetwork outerNetwork)
+    {
+        var innerAddress = innerNetwork.BaseAddress;
+        var outerAddress = outerNetwork.BaseAddress;
+
+        // networks of different IP versions share no addresses, and a network can't fit inside a smaller one. Both cases are
+        // answered without converting either address
+        if (innerAddress.AddressFamily != outerAddress.AddressFamily || innerNetwork.PrefixLength < outerNetwork.PrefixLength)
+            return false;
+
+        // the inner network is inside the outer one when its address, cut down to the outer network's prefix length, is the outer
+        // network's address. IPNetwork always clears the host bits of its base address, so the outer address needs no masking
+        var version = AddressBits.GetVersion(outerAddress.AddressFamily);
+        var outerNetworkMaskBits = AddressBits.GetNetworkMaskBits(version, outerNetwork.PrefixLength);
+
+        return (AddressBits.FromIPAddress(innerAddress) & outerNetworkMaskBits) == AddressBits.FromIPAddress(outerAddress);
     }
 }

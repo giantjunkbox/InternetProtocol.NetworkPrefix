@@ -25,64 +25,64 @@ namespace Test;
 public class ContainmentTests
 {
     [Test]
-    public void ContainedByOrEqual_IPv4_01()
+    public void IsSubnetOf_IPv4_01()
     {
         var largerNetwork = Network("131.192.0.0/10");
 
-        Assert.That(largerNetwork.ContainsOrEqual(Network("192.0.0.0/2")), Is.False);
-        Assert.That(largerNetwork.ContainedByOrEqual(Network("192.0.0.0/2")), Is.False);
+        Assert.That(largerNetwork.IsSupernetOf(Network("192.0.0.0/2")), Is.False);
+        Assert.That(largerNetwork.IsSubnetOf(Network("192.0.0.0/2")), Is.False);
     }
 
     [Test]
-    public void ContainedBy_IPv4_01()
+    public void IsProperSubnetOf_IPv4_01()
     {
         var smallerNetwork = Network("10.20.30.0/24");
 
-        Assert.That(smallerNetwork.ContainedBy(Network("10.20.0.0/16")), Is.True);
-        Assert.That(smallerNetwork.ContainedBy(Network("10.20.30.0/24")), Is.False);
-        Assert.That(smallerNetwork.ContainedBy(Network("10.20.30.0/25")), Is.False);
-        Assert.That(smallerNetwork.ContainedBy(Network("10.21.0.0/16")), Is.False);
+        Assert.That(smallerNetwork.IsProperSubnetOf(Network("10.20.0.0/16")), Is.True);
+        Assert.That(smallerNetwork.IsProperSubnetOf(Network("10.20.30.0/24")), Is.False);
+        Assert.That(smallerNetwork.IsProperSubnetOf(Network("10.20.30.0/25")), Is.False);
+        Assert.That(smallerNetwork.IsProperSubnetOf(Network("10.21.0.0/16")), Is.False);
 
-        Assert.That(smallerNetwork.ContainedByOrEqual(Network("10.20.0.0/16")), Is.True);
-        Assert.That(smallerNetwork.ContainedByOrEqual(Network("10.20.30.0/24")), Is.True);
-        Assert.That(smallerNetwork.ContainedByOrEqual(Network("10.20.30.0/25")), Is.False);
-        Assert.That(smallerNetwork.ContainedByOrEqual(Network("10.21.0.0/16")), Is.False);
+        Assert.That(smallerNetwork.IsSubnetOf(Network("10.20.0.0/16")), Is.True);
+        Assert.That(smallerNetwork.IsSubnetOf(Network("10.20.30.0/24")), Is.True);
+        Assert.That(smallerNetwork.IsSubnetOf(Network("10.20.30.0/25")), Is.False);
+        Assert.That(smallerNetwork.IsSubnetOf(Network("10.21.0.0/16")), Is.False);
     }
 
     [Test]
-    public void ContainedBy_IPv4_02()
+    public void IsProperSubnetOf_IPv4_02()
     {
-        // the contained-by pair is the inverse of the contains pair
+        // the subnet tests are the inverse of the supernet tests
         var largerNetwork = Network("10.20.0.0/16");
         var smallerNetwork = Network("10.20.30.0/24");
 
-        Assert.That(smallerNetwork.ContainedBy(largerNetwork), Is.EqualTo(largerNetwork.Contains(smallerNetwork)));
-        Assert.That(largerNetwork.ContainedBy(smallerNetwork), Is.EqualTo(smallerNetwork.Contains(largerNetwork)));
-        Assert.That(smallerNetwork.ContainedByOrEqual(largerNetwork), Is.EqualTo(largerNetwork.ContainsOrEqual(smallerNetwork)));
-        Assert.That(largerNetwork.ContainedByOrEqual(smallerNetwork), Is.EqualTo(smallerNetwork.ContainsOrEqual(largerNetwork)));
+        Assert.That(smallerNetwork.IsProperSubnetOf(largerNetwork), Is.EqualTo(largerNetwork.IsProperSupernetOf(smallerNetwork)));
+        Assert.That(largerNetwork.IsProperSubnetOf(smallerNetwork), Is.EqualTo(smallerNetwork.IsProperSupernetOf(largerNetwork)));
+        Assert.That(smallerNetwork.IsSubnetOf(largerNetwork), Is.EqualTo(largerNetwork.IsSupernetOf(smallerNetwork)));
+        Assert.That(largerNetwork.IsSubnetOf(smallerNetwork), Is.EqualTo(smallerNetwork.IsSupernetOf(largerNetwork)));
     }
 
     [Test]
-    public void Contains_IPv4_01()
+    public void IsProperSupernetOf_IPv4_01()
     {
-        Assert.That(Network("0.0.0.0/1").Contains(Network("116.11.0.0/16")), Is.True);
+        Assert.That(Network("0.0.0.0/1").IsProperSupernetOf(Network("116.11.0.0/16")), Is.True);
     }
 
     [Test]
-    public void Contains_IPv4_02()
+    public void IsProperSupernetOf_IPv4_02()
     {
         var largerNetwork = Network("10.20.0.0/16");
 
-        Assert.That(largerNetwork.Contains(Network("10.20.0.0/16")), Is.False);
-        Assert.That(largerNetwork.Contains(Network("10.20.0.0/24")), Is.True);
-        Assert.That(largerNetwork.Contains(Network("10.20.255.0/24")), Is.True);
-        Assert.That(largerNetwork.Contains(Network("10.20.30.40/32")), Is.True);
-        Assert.That(largerNetwork.Contains(Network("10.21.0.0/24")), Is.False);
-        Assert.That(largerNetwork.Contains(Network("10.20.0.0/15")), Is.False);
+        Assert.That(largerNetwork.IsProperSupernetOf(Network("10.20.0.0/16")), Is.False);
+        Assert.That(largerNetwork.IsProperSupernetOf(Network("10.20.0.0/24")), Is.True);
+        Assert.That(largerNetwork.IsProperSupernetOf(Network("10.20.255.0/24")), Is.True);
+        Assert.That(largerNetwork.IsProperSupernetOf(Network("10.20.30.40/32")), Is.True);
+        Assert.That(largerNetwork.IsProperSupernetOf(Network("10.21.0.0/24")), Is.False);
+        Assert.That(largerNetwork.IsProperSupernetOf(Network("10.20.0.0/15")), Is.False);
     }
 
     [Test]
-    public void Contains_IPv4_03()
+    public void ContainsAddress_IPv4_01()
     {
         // testing an address calls the built-in Contains, under which a host network contains the address it represents
         var hostNetwork = Network("10.20.30.40/32");
@@ -98,38 +98,38 @@ public class ContainmentTests
     }
 
     [Test]
-    public void Contains_IPv4_04()
+    public void IsProperSupernetOf_IPv4_03()
     {
-        // a network of the other IP version is never contained
+        // a network of the other IP version is never a subnet, and an address of the other version is never a member
         var everyIPv4Address = Network("0.0.0.0/0");
 
-        Assert.That(everyIPv4Address.Contains(Network("::/128")), Is.False);
-        Assert.That(everyIPv4Address.ContainsOrEqual(Network("::/0")), Is.False);
+        Assert.That(everyIPv4Address.IsProperSupernetOf(Network("::/128")), Is.False);
+        Assert.That(everyIPv4Address.IsSupernetOf(Network("::/0")), Is.False);
         Assert.That(everyIPv4Address.Contains(IPAddress.IPv6Any), Is.False);
     }
 
     [Test]
-    public void Contains_IPv6_01()
+    public void IsProperSupernetOf_IPv6_01()
     {
         var network = Network("2001:db8::/32");
 
-        Assert.That(network.Contains(Network("2001:db8:1::/48")), Is.True);
-        Assert.That(network.Contains(Network("2001:db9::/48")), Is.False);
+        Assert.That(network.IsProperSupernetOf(Network("2001:db8:1::/48")), Is.True);
+        Assert.That(network.IsProperSupernetOf(Network("2001:db9::/48")), Is.False);
         Assert.That(network.Contains(Address("2001:db8::1")), Is.True);
         Assert.That(network.Contains(Address("2001:db9::1")), Is.False);
     }
 
     [Test]
-    public void ContainsOrEqual_IPv4_01()
+    public void IsSupernetOf_IPv4_01()
     {
         var largerNetwork = Network("10.20.0.0/16");
 
-        Assert.That(largerNetwork.ContainsOrEqual(Network("10.20.0.0/16")), Is.True);
-        Assert.That(largerNetwork.ContainsOrEqual(Network("10.20.0.0/24")), Is.True);
-        Assert.That(largerNetwork.ContainsOrEqual(Network("10.20.255.0/24")), Is.True);
-        Assert.That(largerNetwork.ContainsOrEqual(Network("10.20.30.40/32")), Is.True);
-        Assert.That(largerNetwork.ContainsOrEqual(Network("10.21.0.0/24")), Is.False);
-        Assert.That(largerNetwork.ContainsOrEqual(Network("10.20.0.0/15")), Is.False);
+        Assert.That(largerNetwork.IsSupernetOf(Network("10.20.0.0/16")), Is.True);
+        Assert.That(largerNetwork.IsSupernetOf(Network("10.20.0.0/24")), Is.True);
+        Assert.That(largerNetwork.IsSupernetOf(Network("10.20.255.0/24")), Is.True);
+        Assert.That(largerNetwork.IsSupernetOf(Network("10.20.30.40/32")), Is.True);
+        Assert.That(largerNetwork.IsSupernetOf(Network("10.21.0.0/24")), Is.False);
+        Assert.That(largerNetwork.IsSupernetOf(Network("10.20.0.0/15")), Is.False);
     }
 
     [Test]

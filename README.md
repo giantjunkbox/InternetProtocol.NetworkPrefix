@@ -2,7 +2,7 @@
 Network arithmetic for .NET's built-in `System.Net.IPNetwork`.
 
 `IPNetwork` can parse a network and test whether an address is in it. This library adds the rest as C# 14 extension
-members: masks, host ranges, containment between networks, splitting, supernets, exclusion, summarization, sorting,
+members: masks, host ranges, subnet and supernet tests, splitting, supernets, exclusion, summarization, sorting,
 classification, strict parsing and JSON serialization. The members appear on `IPNetwork` itself, so there is no
 separate type to convert to and from.
 
@@ -29,9 +29,20 @@ foreach (var address in network.Hosts())
     Console.WriteLine(address);
 
 var containsAddress = network.Contains(IPAddress.Parse("10.0.0.100"));    // true, built into IPNetwork
-var containsNetwork = network.Contains(IPNetwork.Parse("10.0.0.0/25"));   // true
+var isSupernet = network.IsSupernetOf(IPNetwork.Parse("10.0.0.0/25"));    // true
 var overlaps = network.Overlaps(IPNetwork.Parse("10.0.0.128/25"));        // true
 ```
+
+The subnet and supernet tests follow the names of .NET's set methods, such as `HashSet<T>.IsSubsetOf`. A network is a
+subnet and a supernet of itself, but not a proper one.
+
+| Method               | True when                                        |
+|----------------------|--------------------------------------------------|
+| `IsSupernetOf`       | the other network is inside this one, or equal   |
+| `IsProperSupernetOf` | the other network is inside this one, not equal  |
+| `IsSubnetOf`         | this network is inside the other, or equal       |
+| `IsProperSubnetOf`   | this network is inside the other, not equal      |
+| `Overlaps`           | the two networks share any address               |
 
 ## Parsing
 `IPNetwork.Parse` accepts every IPv4 form that `IPAddress.Parse` does, and reads a number with a leading zero as octal,
@@ -106,6 +117,12 @@ First Host: 10.0.0.1       00001010.00000000.00000000.00000001
 Last Host:  10.0.0.254     00001010.00000000.00000000.11111110
 Hosts/Net:  254
 ```
+
+## Performance
+The members convert a network to integers on each call, which takes a few nanoseconds and allocates nothing. Subnet,
+supernet and overlap tests cost about as much as the built-in `Contains` for an address. Members that return an
+`IPAddress`, such as `NetworkMask`, create a new address on every call. In a hot loop, use the integer members instead:
+`BaseAddressBits`, `NetworkMaskBits` and `HostMaskBits`.
 
 ## Serialization
 System.Text.Json cannot serialize an `IPNetwork` on its own. Register `IPNetworkJsonConverter`, or apply it to a single

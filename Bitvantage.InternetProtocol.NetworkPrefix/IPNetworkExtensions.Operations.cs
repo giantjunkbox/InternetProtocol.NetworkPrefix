@@ -62,11 +62,11 @@ public static partial class IPNetworkExtensions
             var excludedBits = NetworkBits.FromIPNetwork(networkToExclude);
 
             // nothing is left when the excluded network covers all of this network
-            if (excludedBits.ContainsOrEqual(networkBits))
+            if (excludedBits.IsSupernetOf(networkBits))
                 return [];
 
             // nothing is removed when the two networks have no address in common
-            if (!networkBits.ContainsOrEqual(excludedBits))
+            if (!networkBits.IsSupernetOf(excludedBits))
                 return [networkBits.ToIPNetwork()];
 
             // walk from this network towards the excluded network, one prefix length at a time. At each step the current network
@@ -248,7 +248,7 @@ public static partial class IPNetworkExtensions
             foreach (var network in sortedNetworks)
             {
                 // drop a duplicate, or a network that lies inside one that has already been kept
-                if (summarizedNetworks.Count > 0 && summarizedNetworks[^1].ContainsOrEqual(network))
+                if (summarizedNetworks.Count > 0 && summarizedNetworks[^1].IsSupernetOf(network))
                     continue;
 
                 summarizedNetworks.Add(network);
