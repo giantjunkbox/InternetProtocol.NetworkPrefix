@@ -44,9 +44,14 @@ namespace Bitvantage.InternetProtocol.Converters;
 public sealed class IPAddressTypeConverter : TypeConverter
 {
     /// <summary>
-    ///     Whether <see cref="Register" /> has registered the converter; 1 when it has.
+    ///     Guards the registration, so that a second caller waits until the first has finished registering.
     /// </summary>
-    private static int isRegistered;
+    private static readonly Lock RegistrationLock = new();
+
+    /// <summary>
+    ///     Whether <see cref="Register" /> has registered the converter.
+    /// </summary>
+    private static bool isRegistered;
 
     /// <summary>
     ///     Registers this converter as the type converter of <see cref="IPAddress" />, for the whole process. Calling it more than
@@ -54,9 +59,16 @@ public sealed class IPAddressTypeConverter : TypeConverter
     /// </summary>
     public static void Register()
     {
-        // a second registration would add a second, identical provider in front of the first
-        if (Interlocked.Exchange(ref isRegistered, 1) == 0)
+        // a second registration would add a second, identical provider in front of the first. The flag is set only once the
+        // converter is registered, so that no caller returns before it is
+        lock (RegistrationLock)
+        {
+            if (isRegistered)
+                return;
+
             TypeDescriptor.AddAttributes(typeof(IPAddress), new TypeConverterAttribute(typeof(IPAddressTypeConverter)));
+            isRegistered = true;
+        }
     }
 
     /// <summary>

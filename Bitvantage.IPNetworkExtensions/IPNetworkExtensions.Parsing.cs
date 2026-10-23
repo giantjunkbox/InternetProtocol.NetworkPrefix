@@ -661,6 +661,11 @@ public static partial class IPNetworkExtensions
         if (IPAddress.TryParse(hostText, out _))
             throw new FormatException($"'{value}' is not a valid network. {SupportedFormats}");
 
+        // a prefix length or mask that suits neither IP version, such as /024 or /129, is malformed whatever addresses the host
+        // name has, so it is rejected without a lookup
+        if (!suffixText.IsEmpty && !TryParseSuffix(suffixText, IPVersion.IPv4, out _) && !TryParseSuffix(suffixText, IPVersion.IPv6, out _))
+            throw new FormatException($"'{suffixText}' in '{value}' is not a valid prefix length or mask. {SupportedFormats}");
+
         // a mask, or a prefix length too long for IPv4, decides which IP version to look up, unless the caller already chose one
         if (lookupFamily == AddressFamily.Unspecified && !suffixText.IsEmpty)
         {

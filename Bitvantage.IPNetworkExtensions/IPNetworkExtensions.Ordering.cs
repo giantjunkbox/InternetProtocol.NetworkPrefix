@@ -99,8 +99,7 @@ public static partial class IPNetworkExtensions
         /// <exception cref="ArgumentOutOfRangeException">Thrown when the result would be outside the address space.</exception>
         public static IPNetwork operator +(IPNetwork network, int networkCount)
         {
-            // the count is widened before it is negated, because -int.MinValue does not fit in an int
-            return networkCount >= 0 ? MoveBy(network, (UInt128)networkCount, true) : MoveBy(network, (UInt128)(-(long)networkCount), false);
+            return MoveBy(network, networkCount, true);
         }
 
         /// <summary>
@@ -117,7 +116,7 @@ public static partial class IPNetworkExtensions
         /// <exception cref="ArgumentOutOfRangeException">Thrown when the result would be outside the address space.</exception>
         public static IPNetwork operator -(IPNetwork network, int networkCount)
         {
-            return networkCount >= 0 ? MoveBy(network, (UInt128)networkCount, false) : MoveBy(network, (UInt128)(-(long)networkCount), true);
+            return MoveBy(network, networkCount, false);
         }
 
         /// <summary>
@@ -163,6 +162,20 @@ public static partial class IPNetworkExtensions
         {
             return left.CompareTo(right) <= 0;
         }
+    }
+
+    /// <summary>
+    ///     Moves a network by a signed number of networks of the same size.
+    /// </summary>
+    /// <param name="network">The network to move.</param>
+    /// <param name="networkCount">The number of networks to move by, in the other direction when negative.</param>
+    /// <param name="isForward"><see langword="true" /> when a positive count moves towards higher addresses.</param>
+    /// <returns>The network that is <paramref name="networkCount" /> networks away.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the result would be outside the address space.</exception>
+    private static IPNetwork MoveBy(IPNetwork network, int networkCount, bool isForward)
+    {
+        // a negative count moves the other way. It is widened before it is negated, because -int.MinValue does not fit in an int
+        return networkCount >= 0 ? MoveBy(network, (UInt128)networkCount, isForward) : MoveBy(network, (UInt128)(-(long)networkCount), !isForward);
     }
 
     /// <summary>

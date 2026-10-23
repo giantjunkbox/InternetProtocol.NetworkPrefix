@@ -95,8 +95,7 @@ public static partial class IPAddressExtensions
         /// <exception cref="ArgumentOutOfRangeException">Thrown when the result would be outside the address space.</exception>
         public static IPAddress operator +(IPAddress address, int count)
         {
-            // the count is widened before it is negated, because -int.MinValue does not fit in an int
-            return count >= 0 ? MoveBy(address, (UInt128)count, true) : MoveBy(address, (UInt128)(-(long)count), false);
+            return MoveBy(address, count, true);
         }
 
         /// <summary>
@@ -114,7 +113,7 @@ public static partial class IPAddressExtensions
         /// <exception cref="ArgumentOutOfRangeException">Thrown when the result would be outside the address space.</exception>
         public static IPAddress operator -(IPAddress address, int count)
         {
-            return count >= 0 ? MoveBy(address, (UInt128)count, false) : MoveBy(address, (UInt128)(-(long)count), true);
+            return MoveBy(address, count, false);
         }
 
         /// <summary>
@@ -195,6 +194,21 @@ public static partial class IPAddressExtensions
         // IPv6 addresses that differ only in scope ID are not equal, so they do not compare as the same either. An IPv4 address
         // has no scope ID, and reading one throws, so this is only reached for IPv6
         return first.ScopeId.CompareTo(second.ScopeId);
+    }
+
+    /// <summary>
+    ///     Moves an address by a signed number of addresses.
+    /// </summary>
+    /// <param name="address">The address.</param>
+    /// <param name="count">The number of addresses to move by, in the other direction when negative.</param>
+    /// <param name="isForward"><see langword="true" /> when a positive count moves towards higher addresses.</param>
+    /// <returns>The address that is <paramref name="count" /> addresses away.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="address" /> is <see langword="null" />.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the result would be outside the address space.</exception>
+    private static IPAddress MoveBy(IPAddress address, int count, bool isForward)
+    {
+        // a negative count moves the other way. It is widened before it is negated, because -int.MinValue does not fit in an int
+        return count >= 0 ? MoveBy(address, (UInt128)count, isForward) : MoveBy(address, (UInt128)(-(long)count), !isForward);
     }
 
     /// <summary>

@@ -293,6 +293,10 @@ public class ParsingTests
         Assert.That(IPNetwork.Resolve("2001:db8::/32", AddressFamily.InterNetworkV6), Is.EqualTo(Network("2001:db8::/32")));
         Assert.Throws<FormatException>(() => IPNetwork.Resolve("10.0.0.0/8", AddressFamily.InterNetworkV6));
         await Assert.ThrowsAsync<FormatException>(() => IPNetwork.ResolveAsync("2001:db8::/32", AddressFamily.InterNetwork));
+
+        // a malformed prefix length is rejected before the host name is looked up, so no lookup fails first
+        foreach (var networkText in new[] { "host.invalid/024", "host.invalid/ 24", "host.invalid/129", "host.invalid 255.0.255.0" })
+            Assert.Throws<FormatException>(() => IPNetwork.Resolve(networkText), networkText);
     }
 
     [Test]

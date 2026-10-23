@@ -187,7 +187,23 @@ public class ClassificationTests
             allNetworks.AddRange(networks);
         }
 
-        Assert.That(IPNetwork.Summarize(allNetworks), Is.EqualTo(Networks("0.0.0.0/0", "::/0")));
-        Assert.That(allNetworks.Aggregate(System.Numerics.BigInteger.Zero, (total, network) => total + network.TotalAddresses), Is.EqualTo(System.Numerics.BigInteger.Pow(2, 32) + System.Numerics.BigInteger.Pow(2, 128)));
+        // apart from the IPv4-mapped block, whose addresses take the allocation of the IPv4 address that they map
+        Assert.That(IPNetwork.Summarize(allNetworks), Is.EqualTo(IPNetwork.Exclude(Networks("0.0.0.0/0", "::/0"), Networks("::ffff:0:0/96"))));
+        Assert.That(allNetworks.Aggregate(System.Numerics.BigInteger.Zero, (total, network) => total + network.TotalAddresses), Is.EqualTo(System.Numerics.BigInteger.Pow(2, 128)));
+    }
+
+    [Test]
+    public void GetNetworks_03()
+    {
+        // an IPv4-mapped address is in no allocation's networks, and its IPv4 address is in the networks of its allocation
+        var mappedAddress = Address("::ffff:8.8.8.8");
+        Assert.That(mappedAddress.Allocation, Is.EqualTo(AddressAllocation.Global));
+        Assert.That(Enum.GetValues<AddressAllocation>().SelectMany(IPNetwork.GetNetworks).Any(network => network.IsSupernetOf(IPNetwork.FromAddress(mappedAddress))), Is.False);
+        Assert.That(IPNetwork.GetNetworks(AddressAllocation.Global).Any(network => network.IsSupernetOf(IPNetwork.FromAddress(mappedAddress.Unmap()))), Is.True);
+
+        // the networks are worked out once, and can't be changed by a caller
+        var privateNetworks = IPNetwork.GetNetworks(AddressAllocation.Private);
+        Assert.That(IPNetwork.GetNetworks(AddressAllocation.Private), Is.SameAs(privateNetworks));
+        Assert.That(privateNetworks is IList<IPNetwork> { IsReadOnly: true }, Is.True);
     }
 }

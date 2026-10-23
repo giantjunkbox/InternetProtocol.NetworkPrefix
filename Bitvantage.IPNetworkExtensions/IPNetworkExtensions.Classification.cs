@@ -61,8 +61,15 @@ public static partial class IPNetworkExtensions
         ///         <see cref="AddressAllocation.Undefined" /> are the IPv6 address space that is not allocated.
         ///     </para>
         ///     <para>
+        ///         The one exception is the IPv4-mapped block, <c>::ffff:0:0/96</c>, which is in the networks of no allocation. Its
+        ///         addresses take the allocation of the IPv4 address that they map, and they only exist inside a host, where a
+        ///         dual-stack socket reports an IPv4 client with one. To test such an address against the result, unmap it first,
+        ///         or use the built-in <see cref="IPNetwork.Contains" />, which maps it.
+        ///     </para>
+        ///     <para>
         ///         Use the result to build allow-lists and deny-lists, such as the private networks for ASP.NET Core's
-        ///         <c>ForwardedHeadersOptions.KnownIPNetworks</c>. The networks are sorted in the order of <c>IPNetwork.Comparer</c>.
+        ///         <c>ForwardedHeadersOptions.KnownIPNetworks</c>. The networks are sorted in the order of <c>IPNetwork.Comparer</c>,
+        ///         and are worked out once and then reused, so calling this often costs nothing.
         ///     </para>
         /// </remarks>
         /// <param name="allocation">The allocation.</param>
@@ -70,35 +77,61 @@ public static partial class IPNetworkExtensions
         /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="allocation" /> is not a defined value.</exception>
         public static IReadOnlyList<IPNetwork> GetNetworks(AddressAllocation allocation)
         {
-            if (!Enum.IsDefined(allocation))
+            if (!AllocationNetworks.NetworksByAllocation.TryGetValue(allocation, out var networks))
                 throw new ArgumentOutOfRangeException(nameof(allocation), allocation, "The allocation is not a defined value.");
 
-            var registeredBlocks = ClassificationTables.Allocations;
-            var unregisteredBlocks = ClassificationTables.UnregisteredAllocations;
-            var allocatedAddresses = new List<NetworkBits>();
-
-            // each block of the allocation gives it every address of the block that no more specific block decides. Registered
-            // blocks decide before unregistered ones, so an unregistered block also loses a registered block of the same size
-            foreach (var (block, value) in registeredBlocks)
-                if (value == allocation)
-                    allocatedAddresses.AddRange(Exclude(block, registeredBlocks.Where(entry => entry.Block.PrefixLength > block.PrefixLength)));
-
-            foreach (var (block, value) in unregisteredBlocks)
-                if (value == allocation)
-                    allocatedAddresses.AddRange(Exclude(block, registeredBlocks.Concat(unregisteredBlocks.Where(entry => entry.Block.PrefixLength > block.PrefixLength))));
-
-            // the addresses that no block covers are not allocated
-            if (allocation == AddressAllocation.Undefined)
-                foreach (var addressSpace in new[] { ClassificationTables.IPv4AddressSpace, ClassificationTables.IPv6AddressSpace })
-                    allocatedAddresses.AddRange(Exclude(addressSpace, registeredBlocks.Concat(unregisteredBlocks)));
-
-            return ToIPNetworks(SummarizeBits(allocatedAddresses));
-
-            static IEnumerable<NetworkBits> Exclude(NetworkBits block, IEnumerable<(NetworkBits Block, AddressAllocation Value)> blocksToExclude)
-            {
-                return EnumerateDifference([block], SummarizeBits(blocksToExclude.Select(entry => entry.Block)));
-            }
+            return networks;
         }
+    }
+
+    /// <summary>
+    ///     Works out the fewest networks that cover exactly the addresses with an allocation. See <c>IPNetwork.GetNetworks</c>.
+    /// </summary>
+    /// <param name="allocation">The allocation.</param>
+    /// <returns>The networks, sorted.</returns>
+    private static IPNetwork[] CreateNetworksOfAllocation(AddressAllocation allocation)
+    {
+        var registeredBlocks = ClassificationTables.Allocations;
+        var unregisteredBlocks = ClassificationTables.UnregisteredAllocations;
+        var allocatedAddresses = new List<NetworkBits>();
+
+        // each block of the allocation gives it every address of the block that no more specific block decides. Registered
+        // blocks decide before unregistered ones, so an unregistered block also loses a registered block of the same size
+        foreach (var (block, value) in registeredBlocks)
+            if (value == allocation)
+                allocatedAddresses.AddRange(Exclude([block], registeredBlocks.Where(entry => entry.Block.PrefixLength > block.PrefixLength).Select(entry => entry.Block)));
+
+        foreach (var (block, value) in unregisteredBlocks)
+            if (value == allocation)
+                allocatedAddresses.AddRange(Exclude([block], registeredBlocks.Concat(unregisteredBlocks.Where(entry => entry.Block.PrefixLength > block.PrefixLength)).Select(entry => entry.Block)));
+
+        // the addresses that no block covers are not allocated
+        if (allocation == AddressAllocation.Undefined)
+            foreach (var addressSpace in new[] { ClassificationTables.IPv4AddressSpace, ClassificationTables.IPv6AddressSpace })
+                allocatedAddresses.AddRange(Exclude([addressSpace], registeredBlocks.Concat(unregisteredBlocks).Select(entry => entry.Block)));
+
+        // an IPv4-mapped address takes the allocation of the IPv4 address it maps, whatever block of IPv6 space holds it
+        return ToIPNetworks(Exclude(SummarizeBits(allocatedAddresses), [ClassificationTables.IPv4MappedBlock]));
+
+        static IEnumerable<NetworkBits> Exclude(IEnumerable<NetworkBits> networks, IEnumerable<NetworkBits> networksToExclude)
+        {
+            return EnumerateDifference(SummarizeBits(networks), SummarizeBits(networksToExclude));
+        }
+    }
+
+    /// <summary>
+    ///     The networks of each allocation, which <c>IPNetwork.GetNetworks</c> returns.
+    /// </summary>
+    /// <remarks>
+    ///     The networks are in a nested class so that they are worked out the first time they are asked for, and only then.
+    /// </remarks>
+    private static class AllocationNetworks
+    {
+        /// <summary>
+        ///     The networks of each allocation, which can't be changed by a caller.
+        /// </summary>
+        internal static readonly Dictionary<AddressAllocation, IReadOnlyList<IPNetwork>> NetworksByAllocation = Enum.GetValues<AddressAllocation>()
+            .ToDictionary(allocation => allocation, IReadOnlyList<IPNetwork> (allocation) => Array.AsReadOnly(CreateNetworksOfAllocation(allocation)));
     }
 
     /// <summary>
