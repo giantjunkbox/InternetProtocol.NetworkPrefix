@@ -86,6 +86,41 @@ public static partial class IPNetworkExtensions
         }
 
         /// <summary>
+        ///     Moves a network forward by a number of networks of the same size, or back when the number is negative. For example,
+        ///     <c>10.0.0.0/24 + 2</c> is <c>10.0.2.0/24</c>.
+        /// </summary>
+        /// <remarks>
+        ///     This overload accepts an <see cref="int" /> variable, as in <c>network + index</c>. Cast other integer types to
+        ///     <see cref="int" /> or <see cref="UInt128" />.
+        /// </remarks>
+        /// <param name="network">The network to move.</param>
+        /// <param name="networkCount">The number of networks to move forward by, or back by when negative.</param>
+        /// <returns>The network <paramref name="networkCount" /> networks after <paramref name="network" />.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when the result would be outside the address space.</exception>
+        public static IPNetwork operator +(IPNetwork network, int networkCount)
+        {
+            // the count is widened before it is negated, because -int.MinValue does not fit in an int
+            return networkCount >= 0 ? MoveBy(network, (UInt128)networkCount, true) : MoveBy(network, (UInt128)(-(long)networkCount), false);
+        }
+
+        /// <summary>
+        ///     Moves a network back by a number of networks of the same size, or forward when the number is negative. For example,
+        ///     <c>10.0.2.0/24 - 2</c> is <c>10.0.0.0/24</c>.
+        /// </summary>
+        /// <remarks>
+        ///     This overload accepts an <see cref="int" /> variable, as in <c>network - index</c>. Cast other integer types to
+        ///     <see cref="int" /> or <see cref="UInt128" />.
+        /// </remarks>
+        /// <param name="network">The network to move.</param>
+        /// <param name="networkCount">The number of networks to move back by, or forward by when negative.</param>
+        /// <returns>The network <paramref name="networkCount" /> networks before <paramref name="network" />.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when the result would be outside the address space.</exception>
+        public static IPNetwork operator -(IPNetwork network, int networkCount)
+        {
+            return networkCount >= 0 ? MoveBy(network, (UInt128)networkCount, false) : MoveBy(network, (UInt128)(-(long)networkCount), true);
+        }
+
+        /// <summary>
         ///     Determines whether one network sorts after another. See <c>CompareTo</c>.
         /// </summary>
         /// <param name="left">The first network.</param>

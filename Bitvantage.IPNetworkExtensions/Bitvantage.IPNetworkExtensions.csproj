@@ -18,7 +18,7 @@
 		<AssemblyVersion>3.0.0</AssemblyVersion>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseExpression>AGPL-3.0-only</PackageLicenseExpression>
-		<Description>CIDR, subnet and supernet math for System.Net.IPNetwork and IPAddress. Adds network and wildcard masks, host ranges, subnet and supernet tests, splitting, summarization, exclusion, IP range to CIDR conversion, free subnet search, sorting, address arithmetic, IANA address classification, strict parsing, reverse DNS names and JSON serialization as C# 14 extension members.</Description>
+		<Description>CIDR, subnet and supernet math for System.Net.IPNetwork and IPAddress. Adds network and wildcard masks, host ranges, subnet and supernet tests, splitting, summarization, intersection, exclusion, IP range to CIDR conversion and back, free subnet search, sorting, address arithmetic, IANA address classification, strict parsing, reverse DNS names, JSON serialization and configuration binding as C# 14 extension members.</Description>
 		<RepositoryUrl>https://github.com/Bitvantage/InternetProtocol.NetworkPrefix.git</RepositoryUrl>
 		<Copyright>Copyright © Michael Crino 2024</Copyright>
 	</PropertyGroup>

@@ -16,6 +16,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+using System.Net;
 using Bitvantage.InternetProtocol;
 using static Test.TestNetworks;
 
@@ -109,5 +110,15 @@ public class FormattingTests
             """;
 
         Assert.That(actual, Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void GetReverseZones_01()
+    {
+        Assert.That(Network("10.0.0.0/22").GetReverseZones(), Is.EqualTo(new[] { "0.0.10.in-addr.arpa", "1.0.10.in-addr.arpa", "2.0.10.in-addr.arpa", "3.0.10.in-addr.arpa" }));
+        Assert.That(Network("10.0.0.0/24").GetReverseZones(), Is.EqualTo(new[] { Network("10.0.0.0/24").GetReverseZone() }));
+        Assert.That(Network("2001:db8::/31").GetReverseZones(), Is.EqualTo(new[] { "8.b.d.0.1.0.0.2.ip6.arpa", "9.b.d.0.1.0.0.2.ip6.arpa" }));
+        Assert.That(Network("10.0.0.0/9").GetReverseZones(), Has.Count.EqualTo(128));
+        Assert.That(Network("10.0.0.5").GetReverseZones(), Is.EqualTo(new[] { "5.0.0.10.in-addr.arpa" }));
     }
 }

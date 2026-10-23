@@ -69,9 +69,11 @@ notes.
   only by `IPNetwork.Resolve` and `IPNetwork.ResolveAsync`. They use the first address returned that the prefix length
   or mask suits, so `example.com/64` takes an IPv6 address even when the resolver lists IPv4 first, and they reject a
   network of a different IP version than the address family that was asked for.
-- Parsing accepts only the standard dotted-decimal form of an IPv4 address and mask. See the first fix below. It also
-  rejects IPv6 endpoint text with brackets, such as `[2001:db8::]:80/32`, whose port `IPAddress` drops, and a scope ID
-  that `IPAddress` can't read and ignores, such as `fe80::1%` or the name of an interface that does not exist.
+- Parsing accepts only the standard dotted-decimal form of an IPv4 address and mask. See the first fix below. The same
+  rule applies to an IPv4 address embedded in IPv6 text, so `::ffff:10.0.0.01` is rejected. Parsing also rejects IPv6
+  endpoint text with brackets, such as `[2001:db8::]:80/32`, whose port `IPAddress` drops; a scope ID that `IPAddress`
+  can't read and ignores, such as `fe80::1%` or the name of an interface that does not exist; a prefix length with a
+  leading zero, such as `/024`; and whitespace between a slash and the prefix length.
 - `Exclude` follows set semantics. It returns an empty list when the excluded network covers the whole network, and
   the network itself when the two do not overlap, where `RemoveNetwork` threw in both cases. Its result is sorted,
   where `RemoveNetwork` listed the largest network first.
@@ -100,6 +102,24 @@ notes.
 - `IPAddressJsonConverter`, because System.Text.Json cannot serialize an `IPAddress` either: writing one throws a
   `SocketException`. It reads addresses with the strict parser, keeps IPv6 scope IDs, and supports addresses as
   dictionary keys.
+- `IPNetworkTypeConverter` and `IPAddressTypeConverter`, each with a `Register` method to call at startup. Without them,
+  configuration binding reports no error and leaves a network at `0.0.0.0/0`, an address `null` and a list empty, so an
+  allow-list in `appsettings.json`, such as ASP.NET Core's `ForwardedHeadersOptions.KnownIPNetworks`, is silently lost.
+- `IPNetwork.ParseInterface` and `TryParseInterface`, which read text such as `10.0.0.7/24` or
+  `10.0.0.7 255.255.255.0` as the address and the network it is on, keeping the host address that `ParseStrict` clears.
+- `Intersect`, on a network and as a static set operation, beside `Summarize` and `Exclude`.
+- `IPNetwork.GetRanges`, the ranges of consecutive addresses that a set of networks covers, the reverse of
+  `Summarize(firstAddress, lastAddress)`.
+- `IPNetwork.GetNetworks(allocation)`, the networks that cover exactly the addresses of an allocation, such as the
+  private networks for an allow-list.
+- `IPNetwork.GetPrefixLengthForHosts`, the longest prefix length whose networks hold a number of hosts.
+- `GetReverseZones()`, every reverse DNS zone of a network, including one whose prefix length is not on a label
+  boundary, such as the four zones of a /22.
+- `ToExpandedString()` on an address, which writes an IPv6 address in full, such as
+  `2001:0db8:0000:0000:0000:0000:0000:0001`.
+- `int` overloads of `GetAddress` and of the `+` and `-` operators on networks and addresses, so that an `int` variable
+  can be passed without a cast. A negative count moves the other way.
+- UTF-8 overloads of `ParseRange` and `TryParseRange`.
 - `Overlaps`, `GetSupernet()`, `GetSupernet(int)`, `LastAddress`, `HostBitLength`, `IsHostNetwork`, `FromAddress` and
   `FromMask`.
 - The `<=` and `>=` operators.
@@ -174,6 +194,8 @@ notes.
 - Replace parsing of host names with `IPNetwork.Resolve` or `IPNetwork.ResolveAsync`.
 - Pass `IPNetwork.Comparer` when sorting networks or creating a sorted collection of them.
 - Register `IPNetworkJsonConverter` in the serializer options, or apply it to each network property.
+- Call `IPNetworkTypeConverter.Register()` and `IPAddressTypeConverter.Register()` at startup if networks or addresses
+  are bound from configuration.
 - Replace XML serialization of a network with a `string` property.
 - Remove any handling of the exceptions that `RemoveNetwork` threw for an equal, containing or disjoint network.
 - If you relied on `Summarize` keeping covered networks, or on the order it returned, adjust for the sorted minimal

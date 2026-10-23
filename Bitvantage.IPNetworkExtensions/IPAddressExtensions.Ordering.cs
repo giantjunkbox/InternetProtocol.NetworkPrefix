@@ -81,6 +81,43 @@ public static partial class IPAddressExtensions
         }
 
         /// <summary>
+        ///     Moves an address forward, or back when the count is negative. For example, <c>10.0.0.255 + 1</c> is
+        ///     <c>10.0.1.0</c>. An IPv6 scope ID is kept.
+        /// </summary>
+        /// <remarks>
+        ///     This overload accepts an <see cref="int" /> variable, as in <c>address + index</c>. Cast other integer types to
+        ///     <see cref="int" /> or <see cref="UInt128" />.
+        /// </remarks>
+        /// <param name="address">The address.</param>
+        /// <param name="count">The number of addresses to move forward by, or back by when negative.</param>
+        /// <returns>The address <paramref name="count" /> addresses after <paramref name="address" />.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="address" /> is <see langword="null" />.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when the result would be outside the address space.</exception>
+        public static IPAddress operator +(IPAddress address, int count)
+        {
+            // the count is widened before it is negated, because -int.MinValue does not fit in an int
+            return count >= 0 ? MoveBy(address, (UInt128)count, true) : MoveBy(address, (UInt128)(-(long)count), false);
+        }
+
+        /// <summary>
+        ///     Moves an address back, or forward when the count is negative. For example, <c>10.0.1.0 - 1</c> is
+        ///     <c>10.0.0.255</c>. An IPv6 scope ID is kept.
+        /// </summary>
+        /// <remarks>
+        ///     This overload accepts an <see cref="int" /> variable, as in <c>address - index</c>. Cast other integer types to
+        ///     <see cref="int" /> or <see cref="UInt128" />.
+        /// </remarks>
+        /// <param name="address">The address.</param>
+        /// <param name="count">The number of addresses to move back by, or forward by when negative.</param>
+        /// <returns>The address <paramref name="count" /> addresses before <paramref name="address" />.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="address" /> is <see langword="null" />.</exception>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when the result would be outside the address space.</exception>
+        public static IPAddress operator -(IPAddress address, int count)
+        {
+            return count >= 0 ? MoveBy(address, (UInt128)count, false) : MoveBy(address, (UInt128)(-(long)count), true);
+        }
+
+        /// <summary>
         ///     Determines whether one address sorts after another. See <c>CompareTo</c>.
         /// </summary>
         /// <param name="left">The first address.</param>

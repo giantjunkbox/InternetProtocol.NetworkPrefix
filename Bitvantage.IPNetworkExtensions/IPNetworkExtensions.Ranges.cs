@@ -17,11 +17,17 @@
 */
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
+using System.Text;
 
 namespace Bitvantage.InternetProtocol;
 
 public static partial class IPNetworkExtensions
 {
+    /// <summary>
+    ///     A description of the range format, for exception messages.
+    /// </summary>
+    private const string SupportedRangeFormat = "A range is two complete addresses of the same IP version separated by a dash, the first no higher than the second, such as 10.0.0.1-10.0.0.9.";
+
     extension(IPNetwork)
     {
         /// <summary>
@@ -79,7 +85,22 @@ public static partial class IPNetworkExtensions
             if (TryParseRangeCore(value, out var networks))
                 return ToIPNetworks(networks);
 
-            throw new FormatException($"'{value}' is not a valid address range or network. A range is two complete addresses of the same IP version separated by a dash, the first no higher than the second, such as 10.0.0.1-10.0.0.9.");
+            throw new FormatException($"'{value}' is not a valid address range or network. {SupportedRangeFormat}");
+        }
+
+        /// <summary>
+        ///     Parses UTF-8 text of an address range into the fewest networks that cover exactly that range. See
+        ///     <see cref="ParseRange(string)" /> for the accepted formats.
+        /// </summary>
+        /// <param name="utf8Text">The UTF-8 text to parse.</param>
+        /// <returns>The networks that cover the range, in ascending order.</returns>
+        /// <exception cref="FormatException">Thrown when <paramref name="utf8Text" /> is not a valid range or network.</exception>
+        public static IReadOnlyList<IPNetwork> ParseRange(ReadOnlySpan<byte> utf8Text)
+        {
+            if (Utf8Text.TryParse<List<NetworkBits>?>(utf8Text, TryParseRangeCore, out var networks) && networks is not null)
+                return ToIPNetworks(networks);
+
+            throw new FormatException($"'{Encoding.UTF8.GetString(utf8Text)}' is not a valid address range or network. {SupportedRangeFormat}");
         }
 
         /// <summary>
@@ -142,6 +163,25 @@ public static partial class IPNetworkExtensions
         public static bool TryParseRange(ReadOnlySpan<char> value, [NotNullWhen(true)] out IReadOnlyList<IPNetwork>? result)
         {
             if (TryParseRangeCore(value, out var networks))
+            {
+                result = ToIPNetworks(networks);
+                return true;
+            }
+
+            result = null;
+            return false;
+        }
+
+        /// <summary>
+        ///     Attempts to parse UTF-8 text of an address range into the fewest networks that cover exactly that range. See
+        ///     <see cref="ParseRange(string)" /> for the accepted formats.
+        /// </summary>
+        /// <param name="utf8Text">The UTF-8 text to parse.</param>
+        /// <param name="result">When this method returns <see langword="true" />, the networks that cover the range, in ascending order.</param>
+        /// <returns><see langword="true" /> when the text is a valid range or network; otherwise <see langword="false" />. This method never throws.</returns>
+        public static bool TryParseRange(ReadOnlySpan<byte> utf8Text, [NotNullWhen(true)] out IReadOnlyList<IPNetwork>? result)
+        {
+            if (Utf8Text.TryParse<List<NetworkBits>?>(utf8Text, TryParseRangeCore, out var networks) && networks is not null)
             {
                 result = ToIPNetworks(networks);
                 return true;

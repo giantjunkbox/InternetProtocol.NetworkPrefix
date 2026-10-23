@@ -16,6 +16,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+using System.Net;
 using Bitvantage.InternetProtocol;
 using static Test.TestNetworks;
 
@@ -156,5 +157,37 @@ public class ClassificationTests
         // part of a registered block that leaves out the blocks inside it takes the registered block's allocation
         Assert.That(Network("192.0.0.0/29").Allocation, Is.EqualTo(AddressAllocation.ProtocolAssignments));
         Assert.That(Network("::ffff:126.0.0.0/103").Allocation, Is.EqualTo(AddressAllocation.Undefined), "an IPv4-mapped 126.0.0.0/7");
+    }
+
+    [Test]
+    public void GetNetworks_01()
+    {
+        Assert.That(IPNetwork.GetNetworks(AddressAllocation.Private), Is.EqualTo(Networks("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7")));
+        Assert.That(IPNetwork.GetNetworks(AddressAllocation.Documentation), Is.EqualTo(Networks("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24", "2001:db8::/32", "3fff::/20")));
+        Assert.That(IPNetwork.GetNetworks(AddressAllocation.Loopback), Is.EqualTo(Networks("127.0.0.0/8", "::1/128")));
+
+        // a block with another allocation inside a registered block is left out of it
+        var protocolAssignments = IPNetwork.GetNetworks(AddressAllocation.ProtocolAssignments);
+        Assert.That(protocolAssignments, Does.Contain(Network("192.0.0.0/29")));
+        Assert.That(protocolAssignments.Any(network => network.Contains(Address("192.0.0.9"))), Is.False);
+        Assert.That(IPNetwork.GetNetworks(AddressAllocation.Global), Does.Contain(Network("192.0.0.9/32")));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => IPNetwork.GetNetworks((AddressAllocation)999));
+    }
+
+    [Test]
+    public void GetNetworks_02()
+    {
+        // every network has the allocation it was returned for, and together the allocations cover every address once
+        var allNetworks = new List<IPNetwork>();
+        foreach (var allocation in Enum.GetValues<AddressAllocation>())
+        {
+            var networks = IPNetwork.GetNetworks(allocation);
+            Assert.That(networks.Select(network => network.Allocation), Is.All.EqualTo(allocation), allocation.ToString());
+            allNetworks.AddRange(networks);
+        }
+
+        Assert.That(IPNetwork.Summarize(allNetworks), Is.EqualTo(Networks("0.0.0.0/0", "::/0")));
+        Assert.That(allNetworks.Aggregate(System.Numerics.BigInteger.Zero, (total, network) => total + network.TotalAddresses), Is.EqualTo(System.Numerics.BigInteger.Pow(2, 32) + System.Numerics.BigInteger.Pow(2, 128)));
     }
 }

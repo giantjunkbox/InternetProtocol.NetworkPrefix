@@ -474,4 +474,60 @@ public class OperationTests
         Assert.That(networkSetException?.ParamName, Is.EqualTo("networks"));
         Assert.That(twoAddressesException?.ParamName, Is.EqualTo("secondAddress"));
     }
+
+    [Test]
+    public void GetAddress_Int_01()
+    {
+        var network = Network("10.0.0.0/24");
+        var addresses = new List<IPAddress>();
+        for (var offset = 0; offset < 3; offset++)
+            addresses.Add(network.GetAddress(offset));
+
+        Assert.That(addresses, Is.EqualTo(new[] { Address("10.0.0.0"), Address("10.0.0.1"), Address("10.0.0.2") }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => network.GetAddress(-1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => network.GetAddress(256));
+    }
+
+    [Test]
+    public void Intersect_IPv4_01()
+    {
+        var network = Network("10.0.0.0/16");
+
+        Assert.That(network.Intersect(Networks("10.0.1.0/24", "10.1.0.0/24")), Is.EqualTo(Networks("10.0.1.0/24")));
+        Assert.That(network.Intersect(Networks("10.0.1.0/24", "10.1.0.0/24", "10.0.0.0/8")), Is.EqualTo(Networks("10.0.0.0/16")));
+        Assert.That(network.Intersect(Networks("2001:db8::/32", "11.0.0.0/8")), Is.Empty);
+
+        Assert.That(network.Intersect(Network("10.0.5.0/24")), Is.EqualTo(Networks("10.0.5.0/24")));
+        Assert.That(network.Intersect(Network("10.0.0.0/8")), Is.EqualTo(Networks("10.0.0.0/16")));
+        Assert.That(network.Intersect(Network("10.1.0.0/16")), Is.Empty);
+    }
+
+    [Test]
+    public void Intersect_Sets_01()
+    {
+        // the private part of an allow-list
+        var allowList = Networks("8.8.8.0/24", "10.1.0.0/16", "172.16.0.0/11", "192.168.1.0/24", "2001:db8::/32", "fd00::/8");
+        var privateNetworks = IPNetwork.GetNetworks(AddressAllocation.Private);
+
+        Assert.That(IPNetwork.Intersect(allowList, privateNetworks), Is.EqualTo(Networks("10.1.0.0/16", "172.16.0.0/12", "192.168.1.0/24", "fd00::/8")));
+        Assert.That(IPNetwork.Intersect(allowList, []), Is.Empty);
+    }
+
+    [Test]
+    public void GetRanges_01()
+    {
+        var ranges = IPNetwork.GetRanges(Networks("10.0.1.0/24", "10.0.0.0/25", "10.0.0.128/26", "10.0.3.0/24", "2001:db8::/127", "10.0.3.10"));
+
+        Assert.That(ranges, Is.EqualTo(new[]
+        {
+            (Address("10.0.0.0"), Address("10.0.0.191")),
+            (Address("10.0.1.0"), Address("10.0.1.255")),
+            (Address("10.0.3.0"), Address("10.0.3.255")),
+            (Address("2001:db8::"), Address("2001:db8::1"))
+        }));
+
+        // the last IPv4 address and the first IPv6 address are not one range
+        Assert.That(IPNetwork.GetRanges(Networks("255.255.255.255", "::")), Has.Count.EqualTo(2));
+        Assert.That(IPNetwork.GetRanges([]), Is.Empty);
+    }
 }

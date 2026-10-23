@@ -44,6 +44,63 @@ public static partial class IPNetworkExtensions
         public NetworkClass Class => GetClass(NetworkBits.FromIPNetwork(network));
     }
 
+    extension(IPNetwork)
+    {
+        /// <summary>
+        ///     Returns the fewest networks that cover exactly the addresses with an allocation. For example, the networks of
+        ///     <see cref="AddressAllocation.Private" /> are <c>10.0.0.0/8</c>, <c>172.16.0.0/12</c>, <c>192.168.0.0/16</c> and
+        ///     <c>fc00::/7</c>.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         This is the reverse of <c>Allocation</c>: every address in the result has the allocation, and every address
+        ///         with it is in the result. A block with another allocation inside a registered block is therefore left out, so
+        ///         the networks of <see cref="AddressAllocation.ProtocolAssignments" /> leave the global <c>192.0.0.9/32</c> out of
+        ///         <c>192.0.0.0/24</c>. The networks of <see cref="AddressAllocation.Global" /> are the address space the registries
+        ///         leave uncovered, plus the globally reachable blocks inside special-purpose ones, and the networks of
+        ///         <see cref="AddressAllocation.Undefined" /> are the IPv6 address space that is not allocated.
+        ///     </para>
+        ///     <para>
+        ///         Use the result to build allow-lists and deny-lists, such as the private networks for ASP.NET Core's
+        ///         <c>ForwardedHeadersOptions.KnownIPNetworks</c>. The networks are sorted in the order of <c>IPNetwork.Comparer</c>.
+        ///     </para>
+        /// </remarks>
+        /// <param name="allocation">The allocation.</param>
+        /// <returns>The networks, sorted.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="allocation" /> is not a defined value.</exception>
+        public static IReadOnlyList<IPNetwork> GetNetworks(AddressAllocation allocation)
+        {
+            if (!Enum.IsDefined(allocation))
+                throw new ArgumentOutOfRangeException(nameof(allocation), allocation, "The allocation is not a defined value.");
+
+            var registeredBlocks = ClassificationTables.Allocations;
+            var unregisteredBlocks = ClassificationTables.UnregisteredAllocations;
+            var allocatedAddresses = new List<NetworkBits>();
+
+            // each block of the allocation gives it every address of the block that no more specific block decides. Registered
+            // blocks decide before unregistered ones, so an unregistered block also loses a registered block of the same size
+            foreach (var (block, value) in registeredBlocks)
+                if (value == allocation)
+                    allocatedAddresses.AddRange(Exclude(block, registeredBlocks.Where(entry => entry.Block.PrefixLength > block.PrefixLength)));
+
+            foreach (var (block, value) in unregisteredBlocks)
+                if (value == allocation)
+                    allocatedAddresses.AddRange(Exclude(block, registeredBlocks.Concat(unregisteredBlocks.Where(entry => entry.Block.PrefixLength > block.PrefixLength))));
+
+            // the addresses that no block covers are not allocated
+            if (allocation == AddressAllocation.Undefined)
+                foreach (var addressSpace in new[] { ClassificationTables.IPv4AddressSpace, ClassificationTables.IPv6AddressSpace })
+                    allocatedAddresses.AddRange(Exclude(addressSpace, registeredBlocks.Concat(unregisteredBlocks)));
+
+            return ToIPNetworks(SummarizeBits(allocatedAddresses));
+
+            static IEnumerable<NetworkBits> Exclude(NetworkBits block, IEnumerable<(NetworkBits Block, AddressAllocation Value)> blocksToExclude)
+            {
+                return EnumerateDifference([block], SummarizeBits(blocksToExclude.Select(entry => entry.Block)));
+            }
+        }
+    }
+
     /// <summary>
     ///     Classifies a network by the purpose of its address space. This is shared by the network and address members.
     /// </summary>
@@ -183,6 +240,16 @@ public static partial class IPNetworkExtensions
         ///     The IPv4-mapped IPv6 block, <c>::ffff:0:0/96</c> (RFC 4291).
         /// </summary>
         internal static readonly NetworkBits IPv4MappedBlock = ParseBlock("::ffff:0:0/96");
+
+        /// <summary>
+        ///     All of the IPv4 address space, <c>0.0.0.0/0</c>.
+        /// </summary>
+        internal static readonly NetworkBits IPv4AddressSpace = ParseBlock("0.0.0.0/0");
+
+        /// <summary>
+        ///     All of the IPv6 address space, <c>::/0</c>.
+        /// </summary>
+        internal static readonly NetworkBits IPv6AddressSpace = ParseBlock("::/0");
 
         /// <summary>
         ///     The allocation of address space that no registered block covers: all of IPv4 is global unicast space, and so is

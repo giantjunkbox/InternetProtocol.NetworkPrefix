@@ -168,4 +168,20 @@ public class OrderingTests
         // the scope ID only breaks ties, so the address and prefix length still come first
         Assert.That(new IPNetwork(Address("fe80::%9"), 64).CompareTo(new IPNetwork(Address("fe80:0:0:1::%1"), 64)), Is.Negative);
     }
+
+    [Test]
+    public void Addition_Int_01()
+    {
+        // an int variable compiles, and a negative count moves the other way
+        var count = 2;
+        var negativeCount = -2;
+
+        Assert.That(Network("10.0.0.0/24") + count, Is.EqualTo(Network("10.0.2.0/24")));
+        Assert.That(Network("10.0.2.0/24") + negativeCount, Is.EqualTo(Network("10.0.0.0/24")));
+        Assert.That(Network("10.0.2.0/24") - count, Is.EqualTo(Network("10.0.0.0/24")));
+        Assert.That(Network("10.0.0.0/24") - negativeCount, Is.EqualTo(Network("10.0.2.0/24")));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => _ = Network("0.0.0.0/24") + int.MinValue);
+        Assert.Throws<ArgumentOutOfRangeException>(() => _ = Network("255.255.255.0/24") - -1);
+    }
 }

@@ -119,4 +119,16 @@ public class RangeTests
         Assert.That(IPNetwork.Summarize(Address("::1"), Address("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")).Count, Is.EqualTo(128));
         Assert.That(IPNetwork.Summarize(Address("ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe"), Address("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")), Is.EqualTo(Networks("ffff:ffff:ffff:ffff:ffff:ffff:ffff:fffe/127")));
     }
+
+    [Test]
+    public void ParseRange_Utf8_01()
+    {
+        Assert.That(IPNetwork.ParseRange("10.0.0.1-10.0.0.6"u8), Is.EqualTo(IPNetwork.ParseRange("10.0.0.1-10.0.0.6")));
+        Assert.That(IPNetwork.TryParseRange("10.0.0.0/24"u8, out var networks), Is.True);
+        Assert.That(networks, Is.EqualTo(Networks("10.0.0.0/24")));
+
+        Assert.That(IPNetwork.TryParseRange("10.0.0.9-10.0.0.1"u8, out networks), Is.False);
+        Assert.That(networks, Is.Null);
+        Assert.Throws<FormatException>(() => IPNetwork.ParseRange("10.0.0.1-9"u8));
+    }
 }

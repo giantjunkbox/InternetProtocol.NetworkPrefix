@@ -123,6 +123,61 @@ public static partial class IPNetworkExtensions
         }
 
         /// <summary>
+        ///     Gets the longest prefix length whose networks hold at least a number of hosts. For example, a subnet for 50 IPv4
+        ///     hosts needs a /26, which holds 62.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Hosts are counted as <c>TotalHosts</c> counts them, so two IPv4 hosts fit in a /31, a point-to-point network,
+        ///         and one fits in a /32. Planners that leave out /31 networks expect a /30 for two hosts. Zero hosts gives a host
+        ///         network.
+        ///     </para>
+        ///     <para>
+        ///         Pair it with <c>AvailableSubnets</c> to place a subnet of the right size, as in
+        ///         <c>block.AvailableSubnets(IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv4, 50), allocated).First()</c>.
+        ///     </para>
+        /// </remarks>
+        /// <param name="version">The IP version.</param>
+        /// <param name="hostCount">The number of hosts the network must hold.</param>
+        /// <returns>The prefix length.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">
+        ///     Thrown when <paramref name="version" /> is neither IPv4 nor IPv6, or no network of that version holds that many hosts.
+        /// </exception>
+        public static int GetPrefixLengthForHosts(IPVersion version, UInt128 hostCount)
+        {
+            ValidateVersionAndPrefixLength(version, 0);
+
+            // a shorter prefix holds at least as many hosts, so the first length found from the longest down is the answer
+            for (var prefixLength = AddressMath.GetBitLength(version); prefixLength >= 0; prefixLength--)
+                if (new NetworkBits(version, UInt128.Zero, prefixLength).TotalHosts >= hostCount)
+                    return prefixLength;
+
+            throw new ArgumentOutOfRangeException(nameof(hostCount), hostCount, $"No {version} network holds {hostCount} hosts. The most that one holds is {new NetworkBits(version, UInt128.Zero, 0).TotalHosts}.");
+        }
+
+        /// <summary>
+        ///     Gets the longest prefix length whose networks hold at least a number of hosts. See
+        ///     <see cref="GetPrefixLengthForHosts(IPVersion, UInt128)" />.
+        /// </summary>
+        /// <remarks>
+        ///     This overload accepts an <see cref="int" /> variable. Cast other integer types to <see cref="int" /> or
+        ///     <see cref="UInt128" />.
+        /// </remarks>
+        /// <param name="version">The IP version.</param>
+        /// <param name="hostCount">The number of hosts the network must hold.</param>
+        /// <returns>The prefix length.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">
+        ///     Thrown when <paramref name="version" /> is neither IPv4 nor IPv6, <paramref name="hostCount" /> is negative, or no
+        ///     network of that version holds that many hosts.
+        /// </exception>
+        public static int GetPrefixLengthForHosts(IPVersion version, int hostCount)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(hostCount);
+
+            return IPNetwork.GetPrefixLengthForHosts(version, (UInt128)hostCount);
+        }
+
+        /// <summary>
         ///     Parses the text of a network, accepting more formats than <see cref="IPNetwork.Parse(string)" /> but only the
         ///     standard form of an IPv4 address.
         /// </summary>
@@ -261,6 +316,110 @@ public static partial class IPNetworkExtensions
         }
 
         /// <summary>
+        ///     Parses the text of an interface address: an address together with the network it is on, such as
+        ///     <c>10.0.0.7/24</c> or <c>10.0.0.7 255.255.255.0</c>. Unlike <see cref="ParseStrict(string)" />, which returns only
+        ///     <c>10.0.0.0/24</c>, this keeps the address.
+        /// </summary>
+        /// <remarks>
+        ///     <para>
+        ///         Network devices, IPAM systems and DHCP servers write the address of an interface this way, as in Cisco's
+        ///         <c>ip address 10.0.0.7 255.255.255.0</c> or Linux's <c>10.0.0.7/24</c>. Every format that
+        ///         <see cref="ParseStrict(string)" /> accepts is accepted, and a single address is on its host network.
+        ///     </para>
+        ///     <para>
+        ///         The address keeps an IPv6 scope ID, as in <c>fe80::7%3/64</c>; the network does not. To accept only text that
+        ///         names a network, with no host bits set, check that <c>address.AddressBits</c> equals
+        ///         <c>network.BaseAddressBits</c>.
+        ///     </para>
+        /// </remarks>
+        /// <param name="value">The text to parse.</param>
+        /// <returns>The address, and the network it is on.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="value" /> is <see langword="null" />.</exception>
+        /// <exception cref="FormatException">Thrown when <paramref name="value" /> is not a valid address and network.</exception>
+        public static (IPAddress Address, IPNetwork Network) ParseInterface(string value)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+
+            return IPNetwork.ParseInterface(value.AsSpan());
+        }
+
+        /// <summary>
+        ///     Parses the text of an interface address: an address together with the network it is on. See
+        ///     <see cref="ParseInterface(string)" />.
+        /// </summary>
+        /// <param name="value">The text to parse.</param>
+        /// <returns>The address, and the network it is on.</returns>
+        /// <exception cref="FormatException">Thrown when <paramref name="value" /> is not a valid address and network.</exception>
+        public static (IPAddress Address, IPNetwork Network) ParseInterface(ReadOnlySpan<char> value)
+        {
+            if (TryParseInterfaceCore(value, out var interfaceAddress))
+                return (interfaceAddress.Address, interfaceAddress.Network.ToIPNetwork());
+
+            throw new FormatException($"'{value}' is not a valid address and network. {SupportedFormats}");
+        }
+
+        /// <summary>
+        ///     Parses UTF-8 text of an interface address: an address together with the network it is on. See
+        ///     <see cref="ParseInterface(string)" />.
+        /// </summary>
+        /// <param name="utf8Text">The UTF-8 text to parse.</param>
+        /// <returns>The address, and the network it is on.</returns>
+        /// <exception cref="FormatException">Thrown when <paramref name="utf8Text" /> is not a valid address and network.</exception>
+        public static (IPAddress Address, IPNetwork Network) ParseInterface(ReadOnlySpan<byte> utf8Text)
+        {
+            if (Utf8Text.TryParse<InterfaceAddress>(utf8Text, TryParseInterfaceCore, out var interfaceAddress))
+                return (interfaceAddress.Address, interfaceAddress.Network.ToIPNetwork());
+
+            throw new FormatException($"'{Encoding.UTF8.GetString(utf8Text)}' is not a valid address and network. {SupportedFormats}");
+        }
+
+        /// <summary>
+        ///     Attempts to parse the text of an interface address: an address together with the network it is on. See
+        ///     <see cref="ParseInterface(string)" />.
+        /// </summary>
+        /// <param name="value">The text to parse.</param>
+        /// <param name="address">When this method returns <see langword="true" />, the address.</param>
+        /// <param name="network">When this method returns <see langword="true" />, the network the address is on.</param>
+        /// <returns><see langword="true" /> when the text is a valid address and network; otherwise <see langword="false" />. This method never throws.</returns>
+        public static bool TryParseInterface([NotNullWhen(true)] string? value, [NotNullWhen(true)] out IPAddress? address, out IPNetwork network)
+        {
+            if (value is null)
+            {
+                address = null;
+                network = default;
+                return false;
+            }
+
+            return IPNetwork.TryParseInterface(value.AsSpan(), out address, out network);
+        }
+
+        /// <summary>
+        ///     Attempts to parse the text of an interface address: an address together with the network it is on. See
+        ///     <see cref="ParseInterface(string)" />.
+        /// </summary>
+        /// <param name="value">The text to parse.</param>
+        /// <param name="address">When this method returns <see langword="true" />, the address.</param>
+        /// <param name="network">When this method returns <see langword="true" />, the network the address is on.</param>
+        /// <returns><see langword="true" /> when the text is a valid address and network; otherwise <see langword="false" />. This method never throws.</returns>
+        public static bool TryParseInterface(ReadOnlySpan<char> value, [NotNullWhen(true)] out IPAddress? address, out IPNetwork network)
+        {
+            return ToInterfaceResult(TryParseInterfaceCore(value, out var interfaceAddress), interfaceAddress, out address, out network);
+        }
+
+        /// <summary>
+        ///     Attempts to parse UTF-8 text of an interface address: an address together with the network it is on. See
+        ///     <see cref="ParseInterface(string)" />.
+        /// </summary>
+        /// <param name="utf8Text">The UTF-8 text to parse.</param>
+        /// <param name="address">When this method returns <see langword="true" />, the address.</param>
+        /// <param name="network">When this method returns <see langword="true" />, the network the address is on.</param>
+        /// <returns><see langword="true" /> when the text is a valid address and network; otherwise <see langword="false" />. This method never throws.</returns>
+        public static bool TryParseInterface(ReadOnlySpan<byte> utf8Text, [NotNullWhen(true)] out IPAddress? address, out IPNetwork network)
+        {
+            return ToInterfaceResult(Utf8Text.TryParse<InterfaceAddress>(utf8Text, TryParseInterfaceCore, out var interfaceAddress), interfaceAddress, out address, out network);
+        }
+
+        /// <summary>
         ///     Attempts to parse the text of a network. See <see cref="ParseStrict(string)" /> for the accepted formats.
         /// </summary>
         /// <param name="value">The text to parse.</param>
@@ -322,7 +481,21 @@ public static partial class IPNetworkExtensions
     /// <returns><see langword="true" /> when the text is a valid network.</returns>
     internal static bool TryParseCore(ReadOnlySpan<char> value, out NetworkBits network)
     {
-        network = default;
+        var isValid = TryParseInterfaceCore(value, out var interfaceAddress);
+        network = interfaceAddress.Network;
+        return isValid;
+    }
+
+    /// <summary>
+    ///     Parses the text of a network into the address as written and the network in integer form. This is the parser behind
+    ///     <c>ParseStrict</c> and <c>ParseInterface</c>.
+    /// </summary>
+    /// <param name="value">The text to parse.</param>
+    /// <param name="interfaceAddress">When this method returns <see langword="true" />, the address and the network.</param>
+    /// <returns><see langword="true" /> when the text is a valid network.</returns>
+    private static bool TryParseInterfaceCore(ReadOnlySpan<char> value, out InterfaceAddress interfaceAddress)
+    {
+        interfaceAddress = default;
 
         if (!TrySplitAddressAndSuffix(value, out var addressText, out var suffixText))
             return false;
@@ -333,9 +506,31 @@ public static partial class IPNetworkExtensions
         if (!TryParseSuffix(suffixText, version, out var prefixLength))
             return false;
 
-        network = new NetworkBits(version, AddressMath.FromIPAddress(address), prefixLength);
+        interfaceAddress = new InterfaceAddress(address, new NetworkBits(version, AddressMath.FromIPAddress(address), prefixLength));
         return true;
     }
+
+    /// <summary>
+    ///     Converts the result of parsing an interface address to the out parameters of <c>TryParseInterface</c>.
+    /// </summary>
+    /// <param name="isValid">Whether the text was valid.</param>
+    /// <param name="interfaceAddress">The parsed address and network, when the text was valid.</param>
+    /// <param name="address">The address, or <see langword="null" /> when the text was not valid.</param>
+    /// <param name="network">The network, or the default network when the text was not valid.</param>
+    /// <returns><paramref name="isValid" />.</returns>
+    private static bool ToInterfaceResult(bool isValid, InterfaceAddress interfaceAddress, [NotNullWhen(true)] out IPAddress? address, out IPNetwork network)
+    {
+        address = isValid ? interfaceAddress.Address : null;
+        network = isValid ? interfaceAddress.Network.ToIPNetwork() : default;
+        return isValid && address is not null;
+    }
+
+    /// <summary>
+    ///     An address as written, and the network it is on in integer form.
+    /// </summary>
+    /// <param name="Address">The address, with any IPv6 scope ID.</param>
+    /// <param name="Network">The network.</param>
+    private readonly record struct InterfaceAddress(IPAddress Address, NetworkBits Network);
 
     /// <summary>
     ///     Parses UTF-8 text of a network into integer form, by converting it to characters and parsing those.
@@ -537,9 +732,16 @@ public static partial class IPNetworkExtensions
         }
 
         // text made only of digits is a prefix length. It is never treated as a mask, even though IPAddress would accept a
-        // number such as 4294967295 as an IPv4 address. NumberStyles.None rejects signs, whitespace and group separators
+        // number such as 4294967295 as an IPv4 address. NumberStyles.None rejects signs, whitespace and group separators, and
+        // a leading zero, as in /024, is rejected for the same reason as in an IPv4 address
         if (IsPrefixLength(suffixText))
+        {
+            prefixLength = 0;
+            if (suffixText.Length > 1 && suffixText[0] == '0')
+                return false;
+
             return int.TryParse(suffixText, NumberStyles.None, CultureInfo.InvariantCulture, out prefixLength) && prefixLength <= addressBitLength;
+        }
 
         // anything else must be a mask of the same IP version as the address
         prefixLength = 0;
@@ -574,9 +776,13 @@ public static partial class IPNetworkExtensions
         }
 
         addressText = trimmedValue[..separatorIndex];
+        suffixText = trimmedValue[(separatorIndex + 1)..];
 
-        // more than one space may separate an address from its mask, so whitespace after the separator is skipped
-        suffixText = trimmedValue[(separatorIndex + 1)..].TrimStart();
+        // more than one space may separate an address from its mask, so whitespace after a whitespace separator is skipped.
+        // A slash is followed directly by the prefix length or mask, as in 10.0.0.0/24
+        if (trimmedValue[separatorIndex] != '/')
+            suffixText = suffixText.TrimStart();
+
         return !suffixText.IsEmpty;
     }
 }

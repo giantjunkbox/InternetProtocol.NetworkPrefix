@@ -174,7 +174,6 @@ public class ParsingTests
         Assert.That(IPNetwork.ParseStrict("10.0.0.0  255.255.255.0"), Is.EqualTo(expected));
         Assert.That(IPNetwork.ParseStrict("10.0.0.0\t255.255.255.0"), Is.EqualTo(expected));
         Assert.That(IPNetwork.ParseStrict("10.0.0.0/255.255.255.0"), Is.EqualTo(expected));
-        Assert.That(IPNetwork.ParseStrict("10.0.0.0/024"), Is.EqualTo(expected));
         Assert.That(IPNetwork.ParseStrict("10.0.0.0/24".AsSpan()), Is.EqualTo(expected));
         Assert.That(IPNetwork.TryParseStrict("10.0.0.0/24".AsSpan(), out var parsedNetwork) && parsedNetwork == expected, Is.True);
 
@@ -294,5 +293,77 @@ public class ParsingTests
         Assert.That(IPNetwork.Resolve("2001:db8::/32", AddressFamily.InterNetworkV6), Is.EqualTo(Network("2001:db8::/32")));
         Assert.Throws<FormatException>(() => IPNetwork.Resolve("10.0.0.0/8", AddressFamily.InterNetworkV6));
         await Assert.ThrowsAsync<FormatException>(() => IPNetwork.ResolveAsync("2001:db8::/32", AddressFamily.InterNetwork));
+    }
+
+    [Test]
+    public void Parse_Strictness_01()
+    {
+        // a prefix length with a leading zero, or with whitespace after the slash, is rejected, as Go's netip does
+        foreach (var networkText in new[] { "10.0.0.0/024", "10.0.0.0/00", "10.0.0.0/ 24", "10.0.0.0 /24", "2001:db8::/032" })
+            Assert.That(IPNetwork.TryParseStrict(networkText, out _), Is.False, networkText);
+
+        Assert.That(IPNetwork.ParseStrict("10.0.0.0/0"), Is.EqualTo(Network("0.0.0.0/0")));
+        Assert.That(IPNetwork.ParseStrict("10.0.0.0   255.0.0.0"), Is.EqualTo(Network("10.0.0.0/8")));
+        Assert.That(IPNetwork.ParseStrict("10.0.0.0\t0.255.255.255"), Is.EqualTo(Network("10.0.0.0/8")));
+    }
+
+    [Test]
+    public void ParseInterface_01()
+    {
+        var (ipv4Address, ipv4Network) = IPNetwork.ParseInterface("10.0.0.7/24");
+        Assert.That(ipv4Address, Is.EqualTo(Address("10.0.0.7")));
+        Assert.That(ipv4Network, Is.EqualTo(Network("10.0.0.0/24")));
+
+        // every format that ParseStrict accepts, including Cisco's address and mask
+        Assert.That(IPNetwork.ParseInterface("10.0.0.7 255.255.255.0"), Is.EqualTo((Address("10.0.0.7"), Network("10.0.0.0/24"))));
+        Assert.That(IPNetwork.ParseInterface("10.0.0.7 0.0.0.255"u8), Is.EqualTo((Address("10.0.0.7"), Network("10.0.0.0/24"))));
+        Assert.That(IPNetwork.ParseInterface("10.0.0.7".AsSpan()), Is.EqualTo((Address("10.0.0.7"), Network("10.0.0.7/32"))));
+
+        // the address keeps a scope ID, and the network does not
+        var (scopedAddress, scopedNetwork) = IPNetwork.ParseInterface("fe80::7%3/64");
+        Assert.That(scopedAddress.ScopeId, Is.EqualTo(3));
+        Assert.That(scopedNetwork, Is.EqualTo(Network("fe80::/64")));
+    }
+
+    [Test]
+    public void ParseInterface_02()
+    {
+        Assert.That(IPNetwork.TryParseInterface("2001:db8::7/64", out var address, out var network), Is.True);
+        Assert.That(address, Is.EqualTo(Address("2001:db8::7")));
+        Assert.That(network, Is.EqualTo(Network("2001:db8::/64")));
+
+        Assert.That(IPNetwork.TryParseInterface("10.0.0.7/24"u8, out address, out network), Is.True);
+        Assert.That((address, network), Is.EqualTo((Address("10.0.0.7"), Network("10.0.0.0/24"))));
+
+        foreach (var interfaceText in new[] { "010.0.0.7/24", "10.0.0.7/33", "10.0.0.7 255.0.255.0", "", "host/24" })
+        {
+            Assert.That(IPNetwork.TryParseInterface(interfaceText, out address, out network), Is.False, interfaceText);
+            Assert.That(address, Is.Null);
+            Assert.Throws<FormatException>(() => IPNetwork.ParseInterface(interfaceText), interfaceText);
+        }
+
+        Assert.That(IPNetwork.TryParseInterface((string?)null, out _, out _), Is.False);
+        Assert.Throws<ArgumentNullException>(() => IPNetwork.ParseInterface((string)null!));
+    }
+
+    [Test]
+    public void GetPrefixLengthForHosts_01()
+    {
+        Assert.That(IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv4, 50), Is.EqualTo(26));
+        Assert.That(IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv4, 62), Is.EqualTo(26));
+        Assert.That(IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv4, 63), Is.EqualTo(25));
+        Assert.That(IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv4, 2), Is.EqualTo(31));
+        Assert.That(IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv4, 1), Is.EqualTo(32));
+        Assert.That(IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv4, 0), Is.EqualTo(32));
+        Assert.That(IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv6, 1000), Is.EqualTo(118));
+        Assert.That(IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv6, UInt128.MaxValue), Is.EqualTo(0));
+
+        // an int variable compiles, as well as a constant
+        var hostCount = 254;
+        Assert.That(IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv4, hostCount), Is.EqualTo(24));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv4, (UInt128)uint.MaxValue));
+        Assert.Throws<ArgumentOutOfRangeException>(() => IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv4, -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => IPNetwork.GetPrefixLengthForHosts(IPVersion.Undefined, 1));
     }
 }

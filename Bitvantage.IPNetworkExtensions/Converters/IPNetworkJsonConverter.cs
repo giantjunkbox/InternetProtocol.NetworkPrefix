@@ -43,6 +43,11 @@ namespace Bitvantage.InternetProtocol.Converters;
 ///         It reads every format that <c>IPNetwork.ParseStrict</c> accepts, rejects the nonstandard IPv4 forms that it rejects,
 ///         and supports networks as the keys of a dictionary.
 ///     </para>
+///     <para>
+///         An IPv6 scope ID on the base address of a network is not written, as <c>ToString(NetworkFormat.AddressAndPrefix)</c>
+///         and <c>IPNetwork.ParseStrict</c> leave it out, so <c>fe80::%3/64</c> is written as <c>"fe80::/64"</c> and reads back
+///         without the scope ID. <see cref="IPAddressJsonConverter" /> keeps the scope ID of an address.
+///     </para>
 /// </remarks>
 public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
 {

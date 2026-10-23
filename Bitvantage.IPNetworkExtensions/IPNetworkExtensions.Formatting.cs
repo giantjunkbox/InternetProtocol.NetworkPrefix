@@ -50,6 +50,27 @@ public static partial class IPNetworkExtensions
         }
 
         /// <summary>
+        ///     Returns the names of the reverse DNS zones that together hold the pointer records for the network. For example,
+        ///     <c>10.0.0.0/22</c> has the four zones <c>0.0.10.in-addr.arpa</c> to <c>3.0.10.in-addr.arpa</c>.
+        /// </summary>
+        /// <remarks>
+        ///     A network whose prefix length is a multiple of 8 for IPv4, or of 4 for IPv6, has a single zone, the one that
+        ///     <c>GetReverseZone</c> returns. Any other network is split into the networks of the next longer multiple, which is
+        ///     at most 128 zones for IPv4 and 8 for IPv6.
+        /// </remarks>
+        /// <returns>The zone names, without trailing dots, in ascending order of address.</returns>
+        public IReadOnlyList<string> GetReverseZones()
+        {
+            var networkBits = NetworkBits.FromIPNetwork(network);
+            var labelBitLength = GetReverseLabelBitLength(networkBits.Version);
+
+            // round the prefix length up to the next label boundary
+            var zonePrefixLength = (networkBits.PrefixLength + labelBitLength - 1) / labelBitLength * labelBitLength;
+
+            return EnumerateSubnets(networkBits, zonePrefixLength).Select(FormatReverseName).ToArray();
+        }
+
+        /// <summary>
         ///     Writes the network in a chosen format.
         /// </summary>
         /// <param name="format">The format.</param>

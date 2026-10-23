@@ -15,6 +15,7 @@
    You should have received a copy of the GNU Affero General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
+using System.Globalization;
 using System.Net;
 
 namespace Bitvantage.InternetProtocol;
@@ -40,6 +41,11 @@ namespace Bitvantage.InternetProtocol;
 /// </remarks>
 public static partial class IPAddressExtensions
 {
+    /// <summary>
+    ///     The length of an IPv6 address written in full: eight groups of four digits, and the seven colons between them.
+    /// </summary>
+    private const int ExpandedIPv6Length = 39;
+
     /// <param name="address">The address.</param>
     extension(IPAddress address)
     {
@@ -122,6 +128,41 @@ public static partial class IPAddressExtensions
         /// <exception cref="ArgumentNullException">Thrown when the address is <see langword="null" />.</exception>
         /// <exception cref="ArgumentException">Thrown when the address is neither IPv4 nor IPv6.</exception>
         public IPVersion Version => IPNetworkExtensions.GetVersionOf(address, nameof(address));
+
+        /// <summary>
+        ///     Writes the address in full. An IPv6 address is written as all eight groups of four hexadecimal digits, without
+        ///     <c>::</c> compression, such as <c>2001:0db8:0000:0000:0000:0000:0000:0001</c>. An IPv4 address is written as
+        ///     <see cref="IPAddress.ToString" /> writes it.
+        /// </summary>
+        /// <remarks>
+        ///     Every IPv6 address written this way is 39 characters long, so the text sorts and compares in the same order as the
+        ///     addresses, which suits logs, databases and search. An IPv4-mapped address is written in hexadecimal too, as in
+        ///     <c>0000:0000:0000:0000:0000:ffff:0a00:0001</c>, and a scope ID is kept, as in
+        ///     <c>fe80:0000:0000:0000:0000:0000:0000:0001%3</c>.
+        /// </remarks>
+        /// <returns>The address in full.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when the address is <see langword="null" />.</exception>
+        /// <exception cref="ArgumentException">Thrown when the address is neither IPv4 nor IPv6.</exception>
+        public string ToExpandedString()
+        {
+            if (IPNetworkExtensions.GetVersionOf(address, nameof(address)) == IPVersion.IPv4)
+                return address.ToString();
+
+            // each group is the next 16 bits, from the most significant, as four lowercase hexadecimal digits, as RFC 5952 prefers
+            var expandedText = string.Create(ExpandedIPv6Length, AddressMath.FromIPAddress(address), static (characters, addressBits) =>
+            {
+                for (var groupIndex = 0; groupIndex < 8; groupIndex++)
+                {
+                    var groupBits = (ushort)(addressBits >> (112 - groupIndex * 16));
+                    groupBits.TryFormat(characters.Slice(groupIndex * 5, 4), out _, "x4", CultureInfo.InvariantCulture);
+
+                    if (groupIndex < 7)
+                        characters[groupIndex * 5 + 4] = ':';
+                }
+            });
+
+            return address.ScopeId == 0 ? expandedText : string.Create(CultureInfo.InvariantCulture, $"{expandedText}%{address.ScopeId}");
+        }
 
         /// <summary>
         ///     Gets the prefix length of the address, read as a network mask. For example, the prefix length of

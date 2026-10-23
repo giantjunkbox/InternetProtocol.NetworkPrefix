@@ -29,7 +29,7 @@ public static partial class IPNetworkExtensions
         /// </summary>
         /// <remarks>
         ///     The addresses are produced as they are enumerated, so this works for networks of any size, but enumerating a large
-        ///     IPv6 network to the end is not practical. Use <see cref="GetAddress" /> to go straight to one address.
+        ///     IPv6 network to the end is not practical. Use <c>GetAddress</c> to go straight to one address.
         /// </remarks>
         /// <returns>Every address in the network, in ascending order.</returns>
         public IEnumerable<IPAddress> Addresses()
@@ -113,6 +113,36 @@ public static partial class IPNetworkExtensions
         }
 
         /// <summary>
+        ///     Computes the intersection of this network and another: the addresses that are in both. Two networks that overlap
+        ///     are always nested, so the result is the smaller network when they overlap, and empty when they don't.
+        /// </summary>
+        /// <param name="otherNetwork">The other network.</param>
+        /// <returns>The network the two have in common, or an empty list.</returns>
+        public IReadOnlyList<IPNetwork> Intersect(IPNetwork otherNetwork)
+        {
+            return ToIPNetworks(IntersectBits([NetworkBits.FromIPNetwork(network)], [NetworkBits.FromIPNetwork(otherNetwork)]));
+        }
+
+        /// <summary>
+        ///     Computes the intersection of this network and a set of networks: the fewest networks that cover every address of
+        ///     this network that is also in <paramref name="otherNetworks" />.
+        /// </summary>
+        /// <remarks>
+        ///     For example, the intersection of <c>10.0.0.0/16</c> with <c>10.0.1.0/24</c>, <c>10.1.0.0/24</c> and <c>10.0.0.0/8</c>
+        ///     is <c>10.0.0.0/16</c>, and with just the first two is <c>10.0.1.0/24</c>. The other networks may overlap each other,
+        ///     and may be of the other IP version. The result is sorted in the order of <c>IPNetwork.Comparer</c>.
+        /// </remarks>
+        /// <param name="otherNetworks">The networks to intersect with.</param>
+        /// <returns>The networks in common, sorted.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="otherNetworks" /> is <see langword="null" />.</exception>
+        public IReadOnlyList<IPNetwork> Intersect(IEnumerable<IPNetwork> otherNetworks)
+        {
+            ArgumentNullException.ThrowIfNull(otherNetworks);
+
+            return ToIPNetworks(IntersectBits([NetworkBits.FromIPNetwork(network)], SummarizeBits(otherNetworks.Select(NetworkBits.FromIPNetwork))));
+        }
+
+        /// <summary>
         ///     Returns the address at an offset from the start of the network. Offset 0 is the network address, and the last offset
         ///     is the last address. For example, offset 10 of <c>10.0.0.0/24</c> is <c>10.0.0.10</c>.
         /// </summary>
@@ -131,7 +161,24 @@ public static partial class IPNetworkExtensions
         }
 
         /// <summary>
-        ///     Returns the offset of an address from the start of the network, the inverse of <see cref="GetAddress" />. For
+        ///     Returns the address at an offset from the start of the network. See <c>GetAddress</c>.
+        /// </summary>
+        /// <remarks>
+        ///     This overload accepts an <see cref="int" /> variable, as in <c>network.GetAddress(index)</c>. Cast other integer types
+        ///     to <see cref="int" /> or <see cref="UInt128" />.
+        /// </remarks>
+        /// <param name="offset">The offset, from 0 to the number of addresses in the network less one.</param>
+        /// <returns>The address.</returns>
+        /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="offset" /> is negative or past the last address.</exception>
+        public IPAddress GetAddress(int offset)
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(offset);
+
+            return network.GetAddress((UInt128)offset);
+        }
+
+        /// <summary>
+        ///     Returns the offset of an address from the start of the network, the inverse of <c>GetAddress</c>. For
         ///     example, the offset of <c>10.0.0.10</c> in <c>10.0.0.0/24</c> is 10.
         /// </summary>
         /// <remarks>
@@ -309,6 +356,75 @@ public static partial class IPNetworkExtensions
             var summarizedExclusions = SummarizeBits(networksToExclude.Select(NetworkBits.FromIPNetwork));
 
             return ToIPNetworks(EnumerateDifference(summarizedNetworks, summarizedExclusions));
+        }
+
+        /// <summary>
+        ///     Converts a set of networks to the ranges of consecutive addresses that they cover, the reverse of
+        ///     <see cref="Summarize(IPAddress, IPAddress)" />. For example, <c>10.0.0.0/25</c>, <c>10.0.0.128/26</c> and
+        ///     <c>10.0.1.0/24</c> cover <c>10.0.0.0</c> to <c>10.0.0.191</c> and <c>10.0.1.0</c> to <c>10.0.1.255</c>.
+        /// </summary>
+        /// <remarks>
+        ///     Overlapping and adjacent networks are merged into one range. The ranges are sorted, IPv4 before IPv6, and a range
+        ///     never spans the two IP versions. This suits firewalls and DHCP servers that take ranges rather than networks, and
+        ///     showing free address space to people.
+        /// </remarks>
+        /// <param name="networks">The networks.</param>
+        /// <returns>The first and last address of each range, sorted.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when <paramref name="networks" /> is <see langword="null" />.</exception>
+        public static IReadOnlyList<(IPAddress First, IPAddress Last)> GetRanges(IEnumerable<IPNetwork> networks)
+        {
+            ArgumentNullException.ThrowIfNull(networks);
+
+            var summarizedNetworks = SummarizeBits(networks.Select(NetworkBits.FromIPNetwork));
+            var ranges = new List<(IPAddress First, IPAddress Last)>();
+
+            // the summarized networks are sorted and free of overlaps, so a range runs on for as long as each network starts just
+            // after the one before it ends, and ends at the last network
+            var rangeStartIndex = 0;
+            for (var networkIndex = 1; networkIndex <= summarizedNetworks.Count; networkIndex++)
+            {
+                if (networkIndex < summarizedNetworks.Count && StartsJustAfter(summarizedNetworks[networkIndex - 1], summarizedNetworks[networkIndex]))
+                    continue;
+
+                var firstNetwork = summarizedNetworks[rangeStartIndex];
+                var lastNetwork = summarizedNetworks[networkIndex - 1];
+                ranges.Add((firstNetwork.ToIPAddress(firstNetwork.BaseAddressBits), lastNetwork.ToIPAddress(lastNetwork.LastAddressBits)));
+                rangeStartIndex = networkIndex;
+            }
+
+            return ranges;
+
+            static bool StartsJustAfter(NetworkBits earlierNetwork, NetworkBits laterNetwork)
+            {
+                // the last address of the address space has no address after it
+                return earlierNetwork.Version == laterNetwork.Version
+                       && earlierNetwork.LastAddressBits != AddressMath.GetAllBits(earlierNetwork.Version)
+                       && earlierNetwork.LastAddressBits + UInt128.One == laterNetwork.BaseAddressBits;
+            }
+        }
+
+        /// <summary>
+        ///     Computes the intersection of two sets of networks: the fewest networks that cover every address that is in both
+        ///     <paramref name="networks" /> and <paramref name="otherNetworks" />.
+        /// </summary>
+        /// <remarks>
+        ///     For example, the intersection of the private blocks with an allow-list gives the private part of the allow-list.
+        ///     Either set may hold overlapping networks, and may mix IPv4 and IPv6. The result is sorted in the order of
+        ///     <c>IPNetwork.Comparer</c>.
+        /// </remarks>
+        /// <param name="networks">The first set of networks.</param>
+        /// <param name="otherNetworks">The second set of networks.</param>
+        /// <returns>The networks in common, sorted.</returns>
+        /// <exception cref="ArgumentNullException">Thrown when either argument is <see langword="null" />.</exception>
+        public static IReadOnlyList<IPNetwork> Intersect(IEnumerable<IPNetwork> networks, IEnumerable<IPNetwork> otherNetworks)
+        {
+            ArgumentNullException.ThrowIfNull(networks);
+            ArgumentNullException.ThrowIfNull(otherNetworks);
+
+            var summarizedNetworks = SummarizeBits(networks.Select(NetworkBits.FromIPNetwork));
+            var summarizedOtherNetworks = SummarizeBits(otherNetworks.Select(NetworkBits.FromIPNetwork));
+
+            return ToIPNetworks(IntersectBits(summarizedNetworks, summarizedOtherNetworks));
         }
 
         /// <summary>
@@ -526,7 +642,7 @@ public static partial class IPNetworkExtensions
     /// <param name="networks">The summarized networks to remove addresses from.</param>
     /// <param name="exclusions">The summarized networks whose addresses are removed.</param>
     /// <returns>The networks that remain, in ascending order.</returns>
-    private static IEnumerable<NetworkBits> EnumerateDifference(List<NetworkBits> networks, List<NetworkBits> exclusions)
+    internal static IEnumerable<NetworkBits> EnumerateDifference(List<NetworkBits> networks, List<NetworkBits> exclusions)
     {
         // the pieces of a network that are still to be examined, each with the run of exclusions that overlap it. A stack, rather
         // than recursion, keeps the depth of the work independent of the iterator, so each result costs the same to produce
@@ -581,11 +697,60 @@ public static partial class IPNetworkExtensions
     }
 
     /// <summary>
+    ///     Computes the networks that two summarized sets of networks have in common.
+    /// </summary>
+    /// <remarks>
+    ///     Both sets must be summarized: sorted, and free of overlaps. The result is summarized too. Two networks that overlap
+    ///     are nested, so where a network of one set overlaps a network of the other, the smaller one is common to both. Two
+    ///     networks of the result are never halves of the same supernet: that supernet would have to lie inside a network of
+    ///     each set, and then both halves would come from the same set, which is summarized.
+    /// </remarks>
+    /// <param name="networks">The first summarized set.</param>
+    /// <param name="otherNetworks">The second summarized set.</param>
+    /// <returns>The networks in common, in ascending order.</returns>
+    private static List<NetworkBits> IntersectBits(List<NetworkBits> networks, List<NetworkBits> otherNetworks)
+    {
+        var commonNetworks = new List<NetworkBits>();
+
+        // both sets are sorted, so a single pass over each finds every overlap
+        var networkIndex = 0;
+        var otherNetworkIndex = 0;
+        while (networkIndex < networks.Count && otherNetworkIndex < otherNetworks.Count)
+        {
+            var network = networks[networkIndex];
+            var otherNetwork = otherNetworks[otherNetworkIndex];
+
+            if (IsWhollyBefore(network, otherNetwork))
+            {
+                networkIndex++;
+            }
+            else if (IsWhollyBefore(otherNetwork, network))
+            {
+                otherNetworkIndex++;
+            }
+            else if (network.PrefixLength >= otherNetwork.PrefixLength)
+            {
+                // the network lies inside the other network. The next network of its set may lie inside the other network too,
+                // so only this set moves on
+                commonNetworks.Add(network);
+                networkIndex++;
+            }
+            else
+            {
+                commonNetworks.Add(otherNetwork);
+                otherNetworkIndex++;
+            }
+        }
+
+        return commonNetworks;
+    }
+
+    /// <summary>
     ///     Summarizes a set of networks in integer form. See <c>IPNetwork.Summarize</c>.
     /// </summary>
     /// <param name="networks">The networks to summarize.</param>
     /// <returns>The summarized networks: sorted, free of overlaps, and with no two that are halves of the same supernet.</returns>
-    private static List<NetworkBits> SummarizeBits(IEnumerable<NetworkBits> networks)
+    internal static List<NetworkBits> SummarizeBits(IEnumerable<NetworkBits> networks)
     {
         // after sorting, a network always comes directly after any network that contains it, and the lower half of a network
         // comes before the upper half
@@ -626,7 +791,7 @@ public static partial class IPNetworkExtensions
     /// </summary>
     /// <param name="networks">The networks.</param>
     /// <returns>The networks, in the same order.</returns>
-    private static IPNetwork[] ToIPNetworks(IEnumerable<NetworkBits> networks)
+    internal static IPNetwork[] ToIPNetworks(IEnumerable<NetworkBits> networks)
     {
         return networks.Select(network => network.ToIPNetwork()).ToArray();
     }

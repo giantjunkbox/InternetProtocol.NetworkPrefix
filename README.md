@@ -66,9 +66,17 @@ var wildcard = IPNetwork.ParseStrict("10.0.0.0 0.0.0.255");                     
 var fromHostMask = IPNetwork.FromHostMask(IPAddress.Parse("10.0.0.0"), IPAddress.Parse("0.0.0.255")); // 10.0.0.0/24
 var mask = IPNetwork.GetNetworkMask(IPVersion.IPv4, 24);                                          // 255.255.255.0
 
+// an interface address keeps the host address that ParseStrict clears
+var (interfaceAddress, interfaceNetwork) = IPNetwork.ParseInterface("10.0.0.7 255.255.255.0"); // 10.0.0.7 and 10.0.0.0/24
+
 // parsing never touches the network; host names are looked up with Resolve or ResolveAsync
 var resolved = await IPNetwork.ResolveAsync("example.com/24");
 ```
+
+`ParseStrict` also rejects a prefix length with a leading zero, such as `/024`, and IPv6 endpoint text such as
+`[2001:db8::]:80/32`, whose port `IPAddress.Parse` silently drops. An IPv6 scope ID, as in `fe80::1%3` or `fe80::1%eth0`,
+is kept on an address but not on a network. An interface name is looked up on the machine that parses it, so a name the
+machine doesn't have is rejected.
 
 ## Address ranges
 Firewalls, access control lists and cloud security groups usually take networks, while people, DHCP scopes and vendor
@@ -78,6 +86,9 @@ allow-lists often give ranges.
 var networks = IPNetwork.Summarize(IPAddress.Parse("10.0.0.1"), IPAddress.Parse("10.0.0.9")); // 10.0.0.1/32, 10.0.0.2/31, 10.0.0.4/30, 10.0.0.8/31
 var parsed = IPNetwork.ParseRange("192.0.2.0 - 192.0.2.130");                                 // 192.0.2.0/25, 192.0.2.128/31, 192.0.2.130/32
 var around = IPNetwork.GetContainingNetwork(IPAddress.Parse("10.0.0.1"), IPAddress.Parse("10.0.0.9")); // 10.0.0.0/28
+
+// and back: the ranges of consecutive addresses that a set of networks covers
+var ranges = IPNetwork.GetRanges(networks);                                                   // (10.0.0.1, 10.0.0.9)
 ```
 
 ## Working with sets of networks
@@ -87,6 +98,10 @@ var (lowerHalf, upperHalf) = network.GetHalves();                  // 10.0.0.0/2
 var supernet = network.GetSupernet(16);                            // 10.0.0.0/16
 var everyIPv4Address = IPNetwork.Any;                              // 0.0.0.0/0, and IPNetwork.IPv6Any is ::/0
 var remaining = network.Exclude(IPNetwork.Parse("10.0.0.0/26"));   // 10.0.0.64/26, 10.0.0.128/25
+var common = network.Intersect(IPNetwork.Parse("10.0.0.128/25"));  // 10.0.0.128/25
+
+// the private part of an allow-list
+var privatePart = IPNetwork.Intersect(allowList, IPNetwork.GetNetworks(AddressAllocation.Private));
 
 // the fewest networks that cover exactly the same addresses
 var summary = IPNetwork.Summarize([
@@ -109,9 +124,16 @@ var free = plan.Exclude(allocated);                                       // 10.
 var firstFreeSlash24 = plan.AvailableSubnets(24, allocated).First();      // 10.0.2.0/24, found without working out the rest
 var difference = IPNetwork.Exclude([IPNetwork.Parse("10.0.0.0/23")], allocated); // 10.0.1.0/25, the set difference of two sets
 
+// a subnet for 50 hosts
+var prefixLength = IPNetwork.GetPrefixLengthForHosts(IPVersion.IPv4, 50); // 26, which holds 62 hosts
+var subnetFor50Hosts = plan.AvailableSubnets(prefixLength, allocated).First(); // 10.0.1.0/26
+
 var gateway = network.GetAddress(1);                                      // 10.0.0.1
 var offset = network.GetOffset(IPAddress.Parse("10.0.0.100"));           // 100
 ```
+
+`GetAddress` and the `+` and `-` operators take an `int` as well as a `UInt128`, so a loop counter works directly, as in
+`network.GetAddress(index)`. Cast other integer types to one of the two.
 
 ## Sorting and operators
 `IPNetwork` does not implement `IComparable`, so sorting it, or adding it to a sorted collection, throws unless a
@@ -136,7 +158,12 @@ IPNetwork.Parse("10.1.0.0/16").Class;         // A
 ```
 
 Allocations follow the IANA special-purpose address registries, and the space they leave uncovered is `Global`. A
-network is only `Global` when all of it is.
+network is only `Global` when all of it is. `GetNetworks` goes the other way, and lists the networks of an allocation,
+ready for an allow-list or a deny-list:
+
+```csharp
+IPNetwork.GetNetworks(AddressAllocation.Private);  // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7
+```
 
 ## Addresses
 `IPAddress` gains the same strict parsing, sort order and classification, plus arithmetic and its integer form.
@@ -149,6 +176,7 @@ var sorted = addresses.Order(IPAddress.Comparer);
 var allocation = address.Allocation;                 // Private
 var integer = address.AddressBits;                   // 167772167, the same form as network.BaseAddressBits
 var isMask = IPAddress.Parse("255.255.255.0").TryGetPrefixLength(out var prefixLength); // true, 24
+var expanded = IPAddress.Parse("2001:db8::1").ToExpandedString(); // 2001:0db8:0000:0000:0000:0000:0000:0001
 ```
 
 A dual-stack server reports IPv4 clients as IPv4-mapped IPv6 addresses, such as `::ffff:10.1.2.3`. Classification treats
@@ -169,6 +197,7 @@ network.ToString(NetworkFormat.AddressAndMask);       // 10.0.0.0 255.255.255.0
 network.ToString(NetworkFormat.AddressAndHostMask);   // 10.0.0.0 0.0.0.255
 network.ToString(NetworkFormat.HostMask);             // 0.0.0.255
 network.GetReverseZone();                             // 0.0.10.in-addr.arpa
+IPNetwork.Parse("10.0.0.0/22").GetReverseZones();     // 0.0.10.in-addr.arpa to 3.0.10.in-addr.arpa
 IPAddress.Parse("10.0.0.7").ReversePointer;           // 7.0.0.10.in-addr.arpa
 network.ToString(NetworkFormat.Detail);
 ```
@@ -188,7 +217,8 @@ supernet and overlap tests take 3 to 5 nanoseconds, two to three times the built
 that return an `IPAddress`, such as `NetworkMask`, create a new address on every call. In a hot loop, use the integer
 members instead: `BaseAddressBits`, `NetworkMaskBits` and `HostMaskBits` on the network, and `AddressBits` on the
 address being tested. Set operations such as `Exclude` and `Summarize` run in time proportional to the number of
-networks; removing 100,000 host addresses from a /8 takes about 50 milliseconds. Methods whose results can be astronomically
+networks; removing 100,000 host addresses from a /8, which leaves about 650,000 networks, takes between 60 and 300
+milliseconds. Methods whose results can be astronomically
 long, such as `Addresses`, `Hosts`, `Split` and `AvailableSubnets`, produce them only as they are enumerated, so taking
 the first few is cheap.
 
@@ -205,7 +235,8 @@ System.Text.Json cannot serialize an `IPNetwork` or an `IPAddress` on its own. R
 `IPAddressJsonConverter`, from the `Bitvantage.InternetProtocol.Converters` namespace, or apply one to a single property
 with `[JsonConverter(typeof(IPNetworkJsonConverter))]`. Networks then serialize as strings in CIDR notation and
 addresses as plain strings, and both also work as dictionary keys. Both converters read text with the strict parsers,
-and both work with source-generated serialization and native AOT.
+and both work with source-generated serialization and native AOT. The network converter leaves out an IPv6 scope ID, as
+`ToString` and `ParseStrict` do, while the address converter keeps it.
 
 ```csharp
 var options = new JsonSerializerOptions();
@@ -226,3 +257,25 @@ internal partial class RouteJsonContext : JsonSerializerContext;
 
 `XmlSerializer` writes an empty element for an `IPNetwork` without reporting an error. To serialize a network as XML,
 store it in a `string` property and convert it with `ToString` and `IPNetwork.ParseStrict`.
+
+## Configuration
+.NET has no type converters for `IPNetwork` and `IPAddress`, and configuration binding doesn't report the problem: a
+network bound from `appsettings.json` comes back as `0.0.0.0/0`, an address as `null`, and a list empty. An allow-list
+can silently become "allow everything". Register the converters, from the `Bitvantage.InternetProtocol.Converters`
+namespace, once at startup, before any configuration is bound:
+
+```csharp
+IPNetworkTypeConverter.Register();
+IPAddressTypeConverter.Register();
+
+builder.Services.Configure<ForwardedHeadersOptions>(builder.Configuration.GetSection("ForwardedHeaders"));
+```
+
+Values are then read with `ParseStrict`, and an invalid value is reported with its configuration path. Two gaps remain,
+both in .NET's binder: it skips a list entry that it can't convert, without an error, and the configuration binding
+source generator, which native AOT uses, ignores type converters. Where either matters, bind strings and parse them with
+`ParseStrict`.
+
+ASP.NET Core binds `IPNetwork` and `IPAddress` query and route parameters with the built-in `TryParse`, which accepts the
+nonstandard IPv4 forms: `?network=010.0.0.0/8` binds as `8.0.0.0/8`. Take a `string` parameter and parse it with
+`ParseStrict` instead. A network can't be a route segment, because of its slash.

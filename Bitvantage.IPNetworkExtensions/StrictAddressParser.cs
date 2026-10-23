@@ -87,7 +87,6 @@ internal static class StrictAddressParser
             return false;
         }
 
-        // an IPv4 address embedded in IPv6 text, such as ::ffff:10.0.0.1, is parsed by the stricter IPv6 rules and is not checked here
         var isStandardForm = version == IPVersion.IPv4 ? IsDottedDecimal(addressText) : IsPlainIPv6(addressText, address);
         if (!isStandardForm)
         {
@@ -113,11 +112,17 @@ internal static class StrictAddressParser
     private static bool IsPlainIPv6(ReadOnlySpan<char> addressText, IPAddress address)
     {
         var scopeSeparatorIndex = addressText.IndexOf('%');
-        if (scopeSeparatorIndex < 0)
-            return !addressText.ContainsAnyExcept(IPv6AddressCharacters);
-
-        if (addressText[..scopeSeparatorIndex].ContainsAnyExcept(IPv6AddressCharacters))
+        var unscopedText = scopeSeparatorIndex < 0 ? addressText : addressText[..scopeSeparatorIndex];
+        if (unscopedText.ContainsAnyExcept(IPv6AddressCharacters))
             return false;
+
+        // an IPv4 address embedded at the end, as in ::ffff:10.0.0.1, follows the same rules as one on its own, so that
+        // ::ffff:10.0.0.01 is rejected just as 10.0.0.01 is
+        if (unscopedText.Contains('.') && !IsDottedDecimal(unscopedText[(unscopedText.LastIndexOf(':') + 1)..]))
+            return false;
+
+        if (scopeSeparatorIndex < 0)
+            return true;
 
         // a scope ID is a number, or the name of a network interface, which is looked up. A scope ID of zero is only genuine
         // when it was written as zero; otherwise IPAddress could not read it

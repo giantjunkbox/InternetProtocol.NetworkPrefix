@@ -233,4 +233,46 @@ public class AddressTests
         Assert.That(IPAddress.ParseStrict("fe80::1%4294967295").ScopeId, Is.EqualTo(uint.MaxValue));
         Assert.That(IPAddress.ParseStrict("::ffff:10.0.0.1"), Is.EqualTo(Address("::ffff:10.0.0.1")));
     }
+
+    [Test]
+    public void ParseStrict_IPv6_02()
+    {
+        // an IPv4 address embedded in IPv6 text follows the same rules as one on its own
+        foreach (var addressText in new[] { "::ffff:10.0.0.08", "::ffff:10.0.0.01", "64:ff9b::010.0.0.1" })
+            Assert.That(IPAddress.TryParseStrict(addressText, out _), Is.False, addressText);
+
+        Assert.That(IPAddress.ParseStrict("64:ff9b::10.0.0.1"), Is.EqualTo(Address("64:ff9b::a00:1")));
+        Assert.That(IPNetwork.TryParseStrict("::ffff:10.0.0.08/128", out _), Is.False);
+    }
+
+    [Test]
+    public void Addition_Int_01()
+    {
+        // an int variable compiles, and a negative count moves the other way
+        var count = 2;
+        var negativeCount = -2;
+
+        Assert.That(Address("10.0.0.1") + count, Is.EqualTo(Address("10.0.0.3")));
+        Assert.That(Address("10.0.0.1") + negativeCount, Is.EqualTo(Address("9.255.255.255")));
+        Assert.That(Address("10.0.0.1") - count, Is.EqualTo(Address("9.255.255.255")));
+        Assert.That(Address("10.0.0.1") - negativeCount, Is.EqualTo(Address("10.0.0.3")));
+        Assert.That(Address("fe80::1%3") + count, Is.EqualTo(Address("fe80::3%3")));
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => _ = Address("0.0.0.1") + int.MinValue);
+        Assert.Throws<ArgumentOutOfRangeException>(() => _ = Address("255.255.255.255") - -1);
+    }
+
+    [Test]
+    public void ToExpandedString_01()
+    {
+        Assert.That(Address("2001:db8::1").ToExpandedString(), Is.EqualTo("2001:0db8:0000:0000:0000:0000:0000:0001"));
+        Assert.That(Address("::").ToExpandedString(), Is.EqualTo("0000:0000:0000:0000:0000:0000:0000:0000"));
+        Assert.That(Address("FFFF:ffff:ffff:ffff:ffff:ffff:ffff:ffff").ToExpandedString(), Is.EqualTo("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"));
+        Assert.That(Address("::ffff:10.0.0.1").ToExpandedString(), Is.EqualTo("0000:0000:0000:0000:0000:ffff:0a00:0001"));
+        Assert.That(Address("fe80::1%3").ToExpandedString(), Is.EqualTo("fe80:0000:0000:0000:0000:0000:0000:0001%3"));
+        Assert.That(Address("10.0.0.1").ToExpandedString(), Is.EqualTo("10.0.0.1"));
+
+        // the expanded text parses back to the same address
+        Assert.That(IPAddress.ParseStrict(Address("2001:db8:1::ab9:c0a8:102").ToExpandedString()), Is.EqualTo(Address("2001:db8:1::ab9:c0a8:102")));
+    }
 }
