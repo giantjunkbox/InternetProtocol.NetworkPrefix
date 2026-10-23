@@ -187,16 +187,36 @@ Set operations such as `Exclude` and `Summarize` run in time proportional to the
 host addresses from a /8 takes under a second. Methods whose results can be astronomically long, such as `Addresses`,
 `Hosts`, `Split` and `AvailableSubnets`, produce them only as they are enumerated, so taking the first few is cheap.
 
+The `Benchmarks` project in the repository measures these with BenchmarkDotNet. Run all of them, or pick some with a
+filter:
+
+```sh
+dotnet run -c Release --project Benchmarks -- --filter '*'
+dotnet run -c Release --project Benchmarks -- --filter '*Containment*' --job short
+```
+
 ## Serialization
-System.Text.Json cannot serialize an `IPNetwork` on its own. Register `IPNetworkJsonConverter`, or apply it to a single
-property with `[JsonConverter(typeof(IPNetworkJsonConverter))]`. Networks then serialize as strings in CIDR notation,
-and also work as dictionary keys.
+System.Text.Json cannot serialize an `IPNetwork` or an `IPAddress` on its own. Register `IPNetworkJsonConverter` and
+`IPAddressJsonConverter`, from the `Bitvantage.InternetProtocol.Converters` namespace, or apply one to a single property
+with `[JsonConverter(typeof(IPNetworkJsonConverter))]`. Networks then serialize as strings in CIDR notation and
+addresses as plain strings, and both also work as dictionary keys. Both converters read text with the strict parsers,
+and both work with source-generated serialization and native AOT.
 
 ```csharp
 var options = new JsonSerializerOptions();
 options.Converters.Add(new IPNetworkJsonConverter());
+options.Converters.Add(new IPAddressJsonConverter());
 
 var json = JsonSerializer.Serialize(new Dictionary<IPNetwork, string> { [network] = "office" }, options); // {"10.0.0.0/24":"office"}
+var gateway = JsonSerializer.Deserialize<IPAddress>("\"10.0.0.1\"", options);
+```
+
+With source generation, list the converters on the context:
+
+```csharp
+[JsonSourceGenerationOptions(Converters = [typeof(IPNetworkJsonConverter), typeof(IPAddressJsonConverter)])]
+[JsonSerializable(typeof(Route))]
+internal partial class RouteJsonContext : JsonSerializerContext;
 ```
 
 `XmlSerializer` writes an empty element for an `IPNetwork` without reporting an error. To serialize a network as XML,

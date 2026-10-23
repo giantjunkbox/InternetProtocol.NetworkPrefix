@@ -92,6 +92,9 @@ notes.
 - `IPNetwork.Comparer`, because `IPNetwork` does not implement `IComparable` and sorting it otherwise throws.
 - `IPNetworkJsonConverter`, because System.Text.Json cannot serialize an `IPNetwork` without one. It also supports
   networks as dictionary keys.
+- `IPAddressJsonConverter`, because System.Text.Json cannot serialize an `IPAddress` either: writing one throws a
+  `SocketException`. It reads addresses with the strict parser, keeps IPv6 scope IDs, and supports addresses as
+  dictionary keys.
 - `Overlaps`, `GetSupernet()`, `GetSupernet(int)`, `LastAddress`, `HostBitLength`, `IsHostNetwork`, `FromAddress` and
   `FromMask`.
 - The `<=` and `>=` operators.
@@ -123,6 +126,9 @@ notes.
 - An IPv4-mapped IPv6 address or network, such as `::ffff:10.0.0.1`, which a dual-stack server reports for an IPv4
   client, takes the allocation and class of the IPv4 address that it maps.
 - XML documentation for every public member.
+- The package is marked as compatible with trimming and native AOT, and both JSON converters work with
+  source-generated serialization.
+- Source Link and a symbol package, so a debugger can step into the library's source.
 
 ### Fixed
 

@@ -21,7 +21,25 @@
 		<Description>CIDR, subnet and supernet math for System.Net.IPNetwork and IPAddress. Adds network and wildcard masks, host ranges, subnet and supernet tests, splitting, summarization, exclusion, IP range to CIDR conversion, free subnet search, sorting, address arithmetic, IANA address classification, strict parsing, reverse DNS names and JSON serialization as C# 14 extension members.</Description>
 		<RepositoryUrl>https://github.com/Bitvantage/InternetProtocol.NetworkPrefix.git</RepositoryUrl>
 		<Copyright>Copyright © Michael Crino 2024</Copyright>
+	</PropertyGroup>
 
+	<PropertyGroup>
+		<!-- a library has no excuse for warnings, and this keeps every public member documented -->
+		<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
+		<!-- turns on the trimming and native AOT analyzers, and tells consumers the library is safe to trim and compile ahead of time -->
+		<IsAotCompatible>true</IsAotCompatible>
+
+		<!-- Source Link, which the SDK includes, lets a debugger fetch the exact source of a build from the repository -->
+		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<EmbedUntrackedSources>true</EmbedUntrackedSources>
+		<IncludeSymbols>true</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+	</PropertyGroup>
+
+	<PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+		<!-- normalizes the paths embedded in a CI build, so the same commit always produces the same package -->
+		<ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
 	</PropertyGroup>
 
 	<ItemGroup>
