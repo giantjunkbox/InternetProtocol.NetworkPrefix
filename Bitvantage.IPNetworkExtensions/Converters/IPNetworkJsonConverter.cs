@@ -17,6 +17,7 @@
 */
 
 using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -45,6 +46,12 @@ namespace Bitvantage.InternetProtocol.Converters;
 /// </remarks>
 public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
 {
+    /// <summary>
+    ///     The most UTF-8 bytes the text of a network without a scope ID can take: an IPv6 address of up to 45 characters, a
+    ///     slash, and a prefix length of up to three digits.
+    /// </summary>
+    private const int MaxNetworkTextLength = 64;
+
     /// <summary>
     ///     Reads a network from a JSON string.
     /// </summary>
@@ -82,7 +89,11 @@ public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
     /// <param name="options">The serializer options.</param>
     public override void Write(Utf8JsonWriter writer, IPNetwork value, JsonSerializerOptions options)
     {
-        writer.WriteStringValue(value.ToString(NetworkFormat.AddressAndPrefix));
+        Span<byte> networkText = stackalloc byte[MaxNetworkTextLength];
+        if (TryFormatWithoutScope(value, networkText, out var networkTextLength))
+            writer.WriteStringValue(networkText[..networkTextLength]);
+        else
+            writer.WriteStringValue(value.ToString(NetworkFormat.AddressAndPrefix));
     }
 
     /// <summary>
@@ -93,7 +104,37 @@ public sealed class IPNetworkJsonConverter : JsonConverter<IPNetwork>
     /// <param name="options">The serializer options.</param>
     public override void WriteAsPropertyName(Utf8JsonWriter writer, IPNetwork value, JsonSerializerOptions options)
     {
-        writer.WritePropertyName(value.ToString(NetworkFormat.AddressAndPrefix));
+        Span<byte> networkText = stackalloc byte[MaxNetworkTextLength];
+        if (TryFormatWithoutScope(value, networkText, out var networkTextLength))
+            writer.WritePropertyName(networkText[..networkTextLength]);
+        else
+            writer.WritePropertyName(value.ToString(NetworkFormat.AddressAndPrefix));
+    }
+
+    /// <summary>
+    ///     Formats a network in CIDR notation straight to UTF-8, which creates no string, unless its base address has an IPv6
+    ///     scope ID.
+    /// </summary>
+    /// <remarks>
+    ///     <see cref="IPNetwork" /> writes the scope ID of its base address, as in <c>fe80::%3/64</c>, but
+    ///     <c>ToString(NetworkFormat.AddressAndPrefix)</c> and <c>IPNetwork.ParseStrict</c> leave it out. A network with a scope
+    ///     ID is left to <c>ToString</c>, so that every network is written the same way.
+    /// </remarks>
+    /// <param name="network">The network.</param>
+    /// <param name="destination">The buffer to write the UTF-8 text to.</param>
+    /// <param name="bytesWritten">When this method returns <see langword="true" />, the number of bytes written.</param>
+    /// <returns><see langword="true" /> when the network was formatted.</returns>
+    private static bool TryFormatWithoutScope(IPNetwork network, Span<byte> destination, out int bytesWritten)
+    {
+        // only an IPv6 address has a scope ID; reading it from an IPv4 address throws
+        var baseAddress = network.BaseAddress;
+        if (baseAddress.AddressFamily == AddressFamily.InterNetworkV6 && baseAddress.ScopeId != 0)
+        {
+            bytesWritten = 0;
+            return false;
+        }
+
+        return network.TryFormat(destination, out bytesWritten);
     }
 
     /// <summary>

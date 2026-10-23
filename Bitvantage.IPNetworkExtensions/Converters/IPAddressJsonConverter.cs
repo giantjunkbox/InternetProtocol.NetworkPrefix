@@ -90,7 +90,8 @@ public sealed class IPAddressJsonConverter : JsonConverter<IPAddress>
     /// <param name="options">The serializer options.</param>
     public override void Write(Utf8JsonWriter writer, IPAddress value, JsonSerializerOptions options)
     {
-        // the address is formatted straight to UTF-8, so writing one creates no string
+        // the address is formatted straight to UTF-8, so writing one creates no string. The buffer always fits the text, so the
+        // fallback to a string only guards against a future change to how addresses are written
         Span<byte> addressText = stackalloc byte[MaxAddressTextLength];
         if (value.TryFormat(addressText, out var addressTextLength))
             writer.WriteStringValue(addressText[..addressTextLength]);

@@ -46,9 +46,7 @@ public static partial class IPNetworkExtensions
         /// <exception cref="ArgumentException">Thrown when <paramref name="address" /> is neither an IPv4 nor an IPv6 address.</exception>
         public static IPNetwork FromAddress(IPAddress address)
         {
-            var version = GetVersionOf(address, nameof(address));
-
-            return new NetworkBits(version, AddressMath.FromIPAddress(address), AddressMath.GetBitLength(version)).ToIPNetwork();
+            return ToHostNetworkBits(address, nameof(address)).ToIPNetwork();
         }
 
         /// <summary>
@@ -151,8 +149,9 @@ public static partial class IPNetworkExtensions
         ///         An IPv4 address or mask must be four decimal numbers separated by dots, without leading zeros.
         ///         <see cref="IPNetwork.Parse(string)" /> and <see cref="IPAddress.Parse(string)" /> also accept older forms, and
         ///         read a number with a leading zero as octal, so that <c>010.0.0.0/8</c> is <c>8.0.0.0/8</c>. Those forms are
-        ///         rejected here, because they are rarely intended and are a known source of security bugs. Prefer this method for
-        ///         text from users, files or other systems.
+        ///         rejected here, because they are rarely intended and are a known source of security bugs. So are IPv6 endpoint
+        ///         text with brackets, such as <c>[2001:db8::]:80</c>, whose port <see cref="IPAddress.Parse(string)" /> drops, and
+        ///         a scope ID that can't be read. Prefer this method for text from users, files or other systems.
         ///     </para>
         /// </remarks>
         /// <param name="value">The text to parse.</param>
@@ -201,11 +200,13 @@ public static partial class IPNetworkExtensions
         /// <remarks>
         ///     <para>
         ///         Text that <see cref="ParseStrict(string)" /> accepts is parsed without a lookup. Otherwise the text before the
-        ///         prefix length or mask is looked up as a host name, and the first address returned is used.
+        ///         prefix length or mask is looked up as a host name, and the first address returned that the prefix length or
+        ///         mask suits is used, in the resolver's order of preference.
         ///     </para>
         ///     <para>
-        ///         When <paramref name="addressFamily" /> is <see cref="AddressFamily.Unspecified" /> and the text has a mask, only
-        ///         addresses of the mask's IP version are looked up.
+        ///         When <paramref name="addressFamily" /> is <see cref="AddressFamily.Unspecified" />, a mask or a prefix length
+        ///         longer than 32 limits the lookup to its IP version. A shorter prefix length, such as <c>/24</c>, suits both IPv4
+        ///         and IPv6, so pass <paramref name="addressFamily" /> to choose between them.
         ///     </para>
         /// </remarks>
         /// <param name="value">The text, such as <c>example.com</c>, <c>example.com/24</c> or <c>example.com 255.255.255.0</c>.</param>
@@ -216,7 +217,10 @@ public static partial class IPNetworkExtensions
         /// <returns>The network.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="value" /> is <see langword="null" />.</exception>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="addressFamily" /> is not one of the values above.</exception>
-        /// <exception cref="FormatException">Thrown when the text is not a valid network or host name.</exception>
+        /// <exception cref="FormatException">
+        ///     Thrown when the text is not a valid network or host name, or is a network of a different IP version than
+        ///     <paramref name="addressFamily" />.
+        /// </exception>
         /// <exception cref="SocketException">Thrown when the host name can't be resolved.</exception>
         public static IPNetwork Resolve(string value, AddressFamily addressFamily = AddressFamily.Unspecified)
         {
@@ -241,7 +245,10 @@ public static partial class IPNetworkExtensions
         /// <returns>The network.</returns>
         /// <exception cref="ArgumentNullException">Thrown when <paramref name="value" /> is <see langword="null" />.</exception>
         /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="addressFamily" /> is not one of the values above.</exception>
-        /// <exception cref="FormatException">Thrown when the text is not a valid network or host name.</exception>
+        /// <exception cref="FormatException">
+        ///     Thrown when the text is not a valid network or host name, or is a network of a different IP version than
+        ///     <paramref name="addressFamily" />.
+        /// </exception>
         /// <exception cref="SocketException">Thrown when the host name can't be resolved.</exception>
         public static async Task<IPNetwork> ResolveAsync(string value, AddressFamily addressFamily = AddressFamily.Unspecified, CancellationToken cancellationToken = default)
         {
@@ -347,23 +354,29 @@ public static partial class IPNetworkExtensions
     /// <param name="value">The text that was looked up, which still holds the prefix length or mask.</param>
     /// <param name="hostAddresses">The addresses that DNS returned.</param>
     /// <returns>The network.</returns>
-    /// <exception cref="SocketException">Thrown when DNS returned no addresses.</exception>
-    /// <exception cref="FormatException">Thrown when the prefix length or mask does not suit the address that was found.</exception>
+    /// <exception cref="SocketException">Thrown when DNS returned no IPv4 or IPv6 addresses.</exception>
+    /// <exception cref="FormatException">Thrown when the prefix length or mask suits none of the addresses that were found.</exception>
     private static IPNetwork CreateFromHostAddresses(string value, IPAddress[] hostAddresses)
     {
-        // use the first IPv4 or IPv6 address, in the order of preference that the resolver returned them in
-        var hostAddress = hostAddresses.FirstOrDefault(address => AddressMath.TryGetVersion(address.AddressFamily, out _));
-        if (hostAddress is null)
+        TrySplitAddressAndSuffix(value, out _, out var suffixText);
+
+        // use the first address that the suffix suits, in the order of preference that the resolver returned them in. A prefix
+        // length such as /64 suits an IPv6 address but not an IPv4 one, which a resolver may list first
+        var foundAddress = false;
+        foreach (var hostAddress in hostAddresses)
+        {
+            if (!AddressMath.TryGetVersion(hostAddress.AddressFamily, out var version))
+                continue;
+
+            foundAddress = true;
+            if (TryParseSuffix(suffixText, version, out var prefixLength))
+                return new NetworkBits(version, AddressMath.FromIPAddress(hostAddress), prefixLength).ToIPNetwork();
+        }
+
+        if (!foundAddress)
             throw new SocketException((int)SocketError.HostNotFound);
 
-        TrySplitAddressAndSuffix(value, out _, out var suffixText);
-        var version = AddressMath.GetVersion(hostAddress.AddressFamily);
-
-        // a prefix length that suits one IP version, such as /64, may not suit the address that the lookup returned
-        if (!TryParseSuffix(suffixText, version, out var prefixLength))
-            throw new FormatException($"'{suffixText}' is not a valid prefix length or mask for {hostAddress}, the {version} address of '{value}'.");
-
-        return new NetworkBits(version, AddressMath.FromIPAddress(hostAddress), prefixLength).ToIPNetwork();
+        throw new FormatException($"'{suffixText}' is not a valid prefix length or mask for any of the addresses of '{value}': {string.Join(", ", hostAddresses.Select(hostAddress => hostAddress.ToString()))}.");
     }
 
     /// <summary>
@@ -421,7 +434,10 @@ public static partial class IPNetworkExtensions
     /// <returns><see langword="true" /> when the text is a network and needs no lookup.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="value" /> is <see langword="null" />.</exception>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="addressFamily" /> is not IPv4, IPv6 or unspecified.</exception>
-    /// <exception cref="FormatException">Thrown when the text is neither a network nor a host name with a valid suffix.</exception>
+    /// <exception cref="FormatException">
+    ///     Thrown when the text is neither a network nor a host name with a valid suffix, or is a network of a different IP
+    ///     version than <paramref name="addressFamily" />.
+    /// </exception>
     private static bool TryParseBeforeLookup(string value, AddressFamily addressFamily, out IPNetwork network, out string hostName, out AddressFamily lookupFamily)
     {
         ArgumentNullException.ThrowIfNull(value);
@@ -433,7 +449,13 @@ public static partial class IPNetworkExtensions
         lookupFamily = addressFamily;
 
         if (IPNetwork.TryParseStrict(value, out network))
+        {
+            // the caller asked for one IP version, and a lookup would only have returned that version
+            if (addressFamily != AddressFamily.Unspecified && network.BaseAddress.AddressFamily != addressFamily)
+                throw new FormatException($"'{value}' is an {network.Version} network, but an {AddressMath.GetVersion(addressFamily)} network was asked for.");
+
             return true;
+        }
 
         if (!TrySplitAddressAndSuffix(value, out var hostText, out var suffixText) || hostText.IsEmpty)
             throw new FormatException($"'{value}' is not a valid network or host name.");
@@ -444,9 +466,14 @@ public static partial class IPNetworkExtensions
         if (IPAddress.TryParse(hostText, out _))
             throw new FormatException($"'{value}' is not a valid network. {SupportedFormats}");
 
-        // a mask decides which IP version to look up, unless the caller already chose one
-        if (lookupFamily == AddressFamily.Unspecified && !suffixText.IsEmpty && !IsPrefixLength(suffixText) && IPAddress.TryParse(suffixText, out var mask))
-            lookupFamily = mask.AddressFamily;
+        // a mask, or a prefix length too long for IPv4, decides which IP version to look up, unless the caller already chose one
+        if (lookupFamily == AddressFamily.Unspecified && !suffixText.IsEmpty)
+        {
+            if (!IsPrefixLength(suffixText) && IPAddress.TryParse(suffixText, out var mask))
+                lookupFamily = mask.AddressFamily;
+            else if (IsPrefixLength(suffixText) && int.TryParse(suffixText, out var prefixLength) && prefixLength > AddressMath.IPv4BitLength)
+                lookupFamily = AddressFamily.InterNetworkV6;
+        }
 
         hostName = hostText.ToString();
         return false;

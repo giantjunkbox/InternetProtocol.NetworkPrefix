@@ -461,4 +461,17 @@ public class OperationTests
 
         Assert.That(IPNetwork.Summarize(networks), Is.EqualTo(Networks("10.0.0.0/8", "2001:db8::/47")));
     }
+
+    [Test]
+    public void GetContainingNetwork_MixedVersions_01()
+    {
+        // the exception names the parameter of the overload that was called
+        var twoNetworksException = Assert.Throws<ArgumentException>(() => IPNetwork.GetContainingNetwork(Network("10.0.0.0/8"), Network("2001:db8::/32")));
+        var networkSetException = Assert.Throws<ArgumentException>(() => IPNetwork.GetContainingNetwork(Networks("10.0.0.0/8", "2001:db8::/32")));
+        var twoAddressesException = Assert.Throws<ArgumentException>(() => IPNetwork.GetContainingNetwork(Address("10.0.0.1"), Address("::1")));
+
+        Assert.That(twoNetworksException?.ParamName, Is.EqualTo("second"));
+        Assert.That(networkSetException?.ParamName, Is.EqualTo("networks"));
+        Assert.That(twoAddressesException?.ParamName, Is.EqualTo("secondAddress"));
+    }
 }

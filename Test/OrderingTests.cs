@@ -151,4 +151,21 @@ public class OrderingTests
         Assert.Throws<ArgumentOutOfRangeException>(() => _ = Network("0.0.0.0/24") - 1);
         Assert.Throws<ArgumentOutOfRangeException>(() => _ = Network("0.0.0.0/24") - UInt128.MaxValue);
     }
+
+    [Test]
+    public void CompareTo_IPv6_Scope_01()
+    {
+        // equality includes the scope ID, so networks that differ only in it sort apart and a sorted set keeps both
+        var interface2Network = new IPNetwork(Address("fe80::%2"), 64);
+        var interface3Network = new IPNetwork(Address("fe80::%3"), 64);
+
+        Assert.That(interface2Network.Equals(interface3Network), Is.False);
+        Assert.That(interface2Network.CompareTo(interface3Network), Is.Negative);
+        Assert.That(interface3Network.CompareTo(interface2Network), Is.Positive);
+        Assert.That(interface2Network.CompareTo(new IPNetwork(Address("fe80::%2"), 64)), Is.Zero);
+        Assert.That(new SortedSet<IPNetwork>([interface2Network, interface3Network], IPNetwork.Comparer), Has.Count.EqualTo(2));
+
+        // the scope ID only breaks ties, so the address and prefix length still come first
+        Assert.That(new IPNetwork(Address("fe80::%9"), 64).CompareTo(new IPNetwork(Address("fe80:0:0:1::%1"), 64)), Is.Negative);
+    }
 }

@@ -17,6 +17,7 @@
 */
 
 using System.Net;
+using System.Net.Sockets;
 
 namespace Bitvantage.InternetProtocol;
 
@@ -31,13 +32,20 @@ public static partial class IPNetworkExtensions
         /// <remarks>
         ///     IPv4 networks sort before IPv6 networks. Within a version, networks sort by base address, and a bigger network
         ///     sorts before a smaller network with the same base address, so a network always sorts before the networks it
-        ///     contains.
+        ///     contains. IPv6 networks that differ only in the scope ID of their base address sort by scope ID, so that two
+        ///     networks sort the same only when they are equal.
         /// </remarks>
         /// <param name="other">The network to compare with.</param>
         /// <returns>A negative number, zero, or a positive number when this network sorts before, the same as, or after <paramref name="other" />.</returns>
         public int CompareTo(IPNetwork other)
         {
-            return NetworkBits.FromIPNetwork(network).CompareTo(NetworkBits.FromIPNetwork(other));
+            var comparison = NetworkBits.FromIPNetwork(network).CompareTo(NetworkBits.FromIPNetwork(other));
+            if (comparison != 0 || network.BaseAddress.AddressFamily != AddressFamily.InterNetworkV6)
+                return comparison;
+
+            // IPNetwork equality includes the scope ID, so networks that differ only in it must not sort the same, or a sorted
+            // set would keep just one of them. Only an IPv6 address has a scope ID; reading it from an IPv4 address throws
+            return network.BaseAddress.ScopeId.CompareTo(other.BaseAddress.ScopeId);
         }
     }
 

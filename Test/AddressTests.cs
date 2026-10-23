@@ -220,4 +220,17 @@ public class AddressTests
         // unlike MapToIPv4, which turns any IPv6 address into an IPv4 address
         Assert.That(unmappedAddress.MapToIPv4(), Is.EqualTo(Address("0.0.0.1")));
     }
+
+    [Test]
+    public void ParseStrict_IPv6_01()
+    {
+        // endpoint text, and a scope ID that IPAddress ignores because it can't read it, are rejected
+        foreach (var addressText in new[] { "[::1]", "[::1]:80", "[fe80::1%3]:80", "fe80::1%", "fe80::1%3%4", "fe80::1%4294967296", "fe80::1%no-such-interface" })
+            Assert.That(IPAddress.TryParseStrict(addressText, out _), Is.False, addressText);
+
+        Assert.That(IPAddress.ParseStrict("fe80::1%3").ScopeId, Is.EqualTo(3));
+        Assert.That(IPAddress.ParseStrict("fe80::1%0").ScopeId, Is.Zero);
+        Assert.That(IPAddress.ParseStrict("fe80::1%4294967295").ScopeId, Is.EqualTo(uint.MaxValue));
+        Assert.That(IPAddress.ParseStrict("::ffff:10.0.0.1"), Is.EqualTo(Address("::ffff:10.0.0.1")));
+    }
 }

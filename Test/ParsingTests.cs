@@ -277,4 +277,22 @@ public class ParsingTests
         var network = await IPNetwork.ResolveAsync("one.one.one.one 255.255.255.255");
         Assert.That(network, Is.AnyOf(Network("1.1.1.1/32"), Network("1.0.0.1/32")));
     }
+
+    [Test]
+    public void Parse_IPv6_03()
+    {
+        // IPAddress reads endpoint text and drops the port, but the strict parser takes plain addresses only
+        foreach (var networkText in new[] { "[2001:db8::]/32", "[2001:db8::]:80/32", "::1 [ffff::]", "[::1]" })
+            Assert.That(IPNetwork.TryParseStrict(networkText, out _), Is.False, networkText);
+    }
+
+    [Test]
+    public async Task Resolve_04()
+    {
+        // text that is already a network is checked against the IP version that was asked for, as a lookup would be
+        Assert.That(IPNetwork.Resolve("10.0.0.0/8", AddressFamily.InterNetwork), Is.EqualTo(Network("10.0.0.0/8")));
+        Assert.That(IPNetwork.Resolve("2001:db8::/32", AddressFamily.InterNetworkV6), Is.EqualTo(Network("2001:db8::/32")));
+        Assert.Throws<FormatException>(() => IPNetwork.Resolve("10.0.0.0/8", AddressFamily.InterNetworkV6));
+        await Assert.ThrowsAsync<FormatException>(() => IPNetwork.ResolveAsync("2001:db8::/32", AddressFamily.InterNetwork));
+    }
 }

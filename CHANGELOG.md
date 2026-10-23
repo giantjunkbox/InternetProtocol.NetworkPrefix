@@ -66,8 +66,12 @@ notes.
 - The library targets .NET 10. .NET 7 is no longer supported by Microsoft.
 - Parsing no longer looks up host names. Parsing a string made a blocking DNS query, which meant that JSON or XML
   deserialization, and the implicit conversion from `string`, could reach the network. Host names are now looked up
-  only by `IPNetwork.Resolve` and `IPNetwork.ResolveAsync`.
-- Parsing accepts only the standard dotted-decimal form of an IPv4 address and mask. See the first fix below.
+  only by `IPNetwork.Resolve` and `IPNetwork.ResolveAsync`. They use the first address returned that the prefix length
+  or mask suits, so `example.com/64` takes an IPv6 address even when the resolver lists IPv4 first, and they reject a
+  network of a different IP version than the address family that was asked for.
+- Parsing accepts only the standard dotted-decimal form of an IPv4 address and mask. See the first fix below. It also
+  rejects IPv6 endpoint text with brackets, such as `[2001:db8::]:80/32`, whose port `IPAddress` drops, and a scope ID
+  that `IPAddress` can't read and ignores, such as `fe80::1%` or the name of an interface that does not exist.
 - `Exclude` follows set semantics. It returns an empty list when the excluded network covers the whole network, and
   the network itself when the two do not overlap, where `RemoveNetwork` threw in both cases. Its result is sorted,
   where `RemoveNetwork` listed the largest network first.
@@ -89,7 +93,8 @@ notes.
 
 ### Added
 
-- `IPNetwork.Comparer`, because `IPNetwork` does not implement `IComparable` and sorting it otherwise throws.
+- `IPNetwork.Comparer`, because `IPNetwork` does not implement `IComparable` and sorting it otherwise throws. Networks
+  that differ only in the scope ID of an IPv6 base address sort apart, so the order agrees with equality.
 - `IPNetworkJsonConverter`, because System.Text.Json cannot serialize an `IPNetwork` without one. It also supports
   networks as dictionary keys.
 - `IPAddressJsonConverter`, because System.Text.Json cannot serialize an `IPAddress` either: writing one throws a
@@ -154,6 +159,10 @@ notes.
   network.
 - `Allocation` reported reserved blocks as `Global`, including `192.0.0.0/24`, `192.88.99.0/24`, `2001::/32` and
   `2002::/16`, because every IPv4 address missing from the table defaulted to `Global`.
+- `Allocation` reported a network that takes in a special-purpose block as `Global`, such as `126.0.0.0/7`, which
+  includes the loopback block `127.0.0.0/8`, or `2000::/3`, which includes the documentation block `2001:db8::/32`.
+  A network is now `Global` only when all of it is. A network that spans blocks with different allocations is
+  `Undefined`, unless it is itself a registered block, such as `192.0.0.0/24`, which keeps its own allocation.
 
 ### Migration
 
@@ -172,8 +181,8 @@ notes.
 - Expect IPv6 host ranges and counts to include the last address.
 - Expect `Exclude` results in sorted order, and a `Split(int)` or `GetSupernet(int)` target equal to the network's own
   prefix length to return the network rather than throw.
-- Check code that relies on `Allocation` returning `Global` for the reserved blocks listed under Fixed, or `Undefined`
-  for IPv4-mapped addresses.
+- Check code that relies on `Allocation` returning `Global` for the reserved blocks listed under Fixed, or for a network
+  that includes special-purpose space, or `Undefined` for IPv4-mapped addresses.
 
 ## [2.0.0] - 2026-08-19
 

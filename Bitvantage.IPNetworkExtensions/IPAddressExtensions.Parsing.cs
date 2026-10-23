@@ -36,7 +36,10 @@ public static partial class IPAddressExtensions
         ///         rarely intended and are a known source of security bugs. Prefer it for text from users, files or other systems.
         ///     </para>
         ///     <para>
-        ///         Leading and trailing whitespace is ignored, and an IPv6 scope ID, as in <c>fe80::1%3</c>, is kept.
+        ///         Leading and trailing whitespace is ignored, and an IPv6 scope ID, as in <c>fe80::1%3</c> or <c>fe80::1%eth0</c>,
+        ///         is kept. IPv6 endpoint text with brackets, such as <c>[::1]:80</c>, is rejected, because
+        ///         <see cref="IPAddress.Parse(string)" /> drops its port, and so is a scope ID that can't be read, such as an empty
+        ///         one or the name of an interface that does not exist, which <see cref="IPAddress.Parse(string)" /> ignores.
         ///     </para>
         /// </remarks>
         /// <param name="value">The text to parse.</param>

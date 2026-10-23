@@ -16,6 +16,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+using Bitvantage.InternetProtocol;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -187,4 +188,17 @@ public class JsonConverterTests
     private sealed record Host(
         [property: JsonConverter(typeof(IPAddressJsonConverter))] IPAddress Address,
         [property: JsonConverter(typeof(IPNetworkJsonConverter))] IPNetwork Network);
+
+    [Test]
+    public void NetworkJsonConverter_08()
+    {
+        // networks are written straight to UTF-8, in the same text as ToString
+        foreach (var network in Networks("0.0.0.0/0", "10.0.0.0/8", "255.255.255.255", "::/0", "::ffff:10.0.0.0/104", "2001:db8:1234:5678:9abc:def0:1234:5678", "ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255/128").Append(default))
+            Assert.That(JsonSerializer.Serialize(network, ConverterOptions), Is.EqualTo($"\"{network.ToString(NetworkFormat.AddressAndPrefix)}\""), network.ToString());
+
+        // a scope ID is left out, as ToString and ParseStrict leave it out
+        var scopedNetwork = new IPNetwork(Address("fe80::%3"), 64);
+        Assert.That(JsonSerializer.Serialize(scopedNetwork, ConverterOptions), Is.EqualTo("\"fe80::/64\""));
+        Assert.That(JsonSerializer.Serialize(new Dictionary<IPNetwork, int> { [scopedNetwork] = 1 }, ConverterOptions), Is.EqualTo("""{"fe80::/64":1}"""));
+    }
 }

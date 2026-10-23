@@ -131,8 +131,12 @@ IPNetwork.Parse("10.1.0.0/16").Allocation;    // Private
 IPNetwork.Parse("100.64.0.0/10").Allocation;  // SharedAddressSpace
 IPNetwork.Parse("fe80::/64").Allocation;      // LinkLocal
 IPNetwork.Parse("2001:db8::/32").Allocation;  // Documentation
+IPNetwork.Parse("126.0.0.0/7").Allocation;    // Undefined, because it includes the loopback block 127.0.0.0/8
 IPNetwork.Parse("10.1.0.0/16").Class;         // A
 ```
+
+Allocations follow the IANA special-purpose address registries, and the space they leave uncovered is `Global`. A
+network is only `Global` when all of it is.
 
 ## Addresses
 `IPAddress` gains the same strict parsing, sort order and classification, plus arithmetic and its integer form.
@@ -180,12 +184,13 @@ Hosts/Net:  254
 
 ## Performance
 The members convert a network to integers on each call, which takes a few nanoseconds and allocates nothing. Subnet,
-supernet and overlap tests cost about as much as the built-in `Contains` for an address. Members that return an
-`IPAddress`, such as `NetworkMask`, create a new address on every call. In a hot loop, use the integer members instead:
-`BaseAddressBits`, `NetworkMaskBits` and `HostMaskBits` on the network, and `AddressBits` on the address being tested.
-Set operations such as `Exclude` and `Summarize` run in time proportional to the number of networks; removing 100,000
-host addresses from a /8 takes under a second. Methods whose results can be astronomically long, such as `Addresses`,
-`Hosts`, `Split` and `AvailableSubnets`, produce them only as they are enumerated, so taking the first few is cheap.
+supernet and overlap tests take 3 to 5 nanoseconds, two to three times the built-in `Contains` for an address. Members
+that return an `IPAddress`, such as `NetworkMask`, create a new address on every call. In a hot loop, use the integer
+members instead: `BaseAddressBits`, `NetworkMaskBits` and `HostMaskBits` on the network, and `AddressBits` on the
+address being tested. Set operations such as `Exclude` and `Summarize` run in time proportional to the number of
+networks; removing 100,000 host addresses from a /8 takes about 50 milliseconds. Methods whose results can be astronomically
+long, such as `Addresses`, `Hosts`, `Split` and `AvailableSubnets`, produce them only as they are enumerated, so taking
+the first few is cheap.
 
 The `Benchmarks` project in the repository measures these with BenchmarkDotNet. Run all of them, or pick some with a
 filter:

@@ -25,8 +25,8 @@ public static partial class IPNetworkExtensions
     extension(IPNetwork network)
     {
         /// <summary>
-        ///     The purpose of the most specific registered block of address space that contains all of this network, such as
-        ///     <see cref="AddressAllocation.Private" /> for <c>10.1.0.0/16</c>.
+        ///     The purpose of the address space of this network, such as <see cref="AddressAllocation.Private" /> for
+        ///     <c>10.1.0.0/16</c>, or <see cref="AddressAllocation.Undefined" /> when it spans blocks with different purposes.
         /// </summary>
         /// <remarks>
         ///     See <see cref="AddressAllocation" /> for how blocks are chosen, and how IPv4-mapped IPv6 networks are classified.
@@ -48,10 +48,10 @@ public static partial class IPNetworkExtensions
     ///     Classifies a network by the purpose of its address space. This is shared by the network and address members.
     /// </summary>
     /// <param name="network">The network, in integer form.</param>
-    /// <returns>The allocation of the most specific registered block that contains the network.</returns>
+    /// <returns>The allocation of the network, as <see cref="AddressAllocation" /> describes.</returns>
     internal static AddressAllocation GetAllocation(NetworkBits network)
     {
-        return FindMostSpecificBlock(ClassificationTables.Allocations, UnmapIPv4(network), AddressAllocation.Undefined);
+        return Classify(ClassificationTables.Allocations, ClassificationTables.UnregisteredAllocations, UnmapIPv4(network), AddressAllocation.Undefined);
     }
 
     /// <summary>
@@ -61,25 +61,98 @@ public static partial class IPNetworkExtensions
     /// <returns>The class of the network.</returns>
     internal static NetworkClass GetClass(NetworkBits network)
     {
-        return FindMostSpecificBlock(ClassificationTables.Classes, UnmapIPv4(network), NetworkClass.Undefined);
+        return Classify(ClassificationTables.Classes, [], UnmapIPv4(network), NetworkClass.Undefined);
     }
 
     /// <summary>
-    ///     Finds the value of the most specific block in a table that contains all of a network.
+    ///     Classifies a network with tables of blocks, some of which may lie inside others.
     /// </summary>
-    /// <typeparam name="TValue">The type of value that the table holds.</typeparam>
-    /// <param name="table">The table, ordered from the most specific block to the least specific.</param>
+    /// <remarks>
+    ///     A network that is itself a registered block takes that block's value, even when smaller blocks with other values lie
+    ///     inside it. Any other network takes the value that all of its addresses share, or <paramref name="undefinedValue" />
+    ///     when they don't share one. An address takes the value of the most specific registered block that contains it, or
+    ///     else of the unregistered block that contains it, or else <paramref name="undefinedValue" />.
+    /// </remarks>
+    /// <typeparam name="TValue">The type of value that the tables hold.</typeparam>
+    /// <param name="registeredBlocks">The registered blocks, ordered from the longest prefix to the shortest.</param>
+    /// <param name="unregisteredBlocks">
+    ///     The blocks that give a value to address space that no registered block covers, ordered from the longest prefix to the
+    ///     shortest. A network that is exactly one of these is not a registered block.
+    /// </param>
     /// <param name="network">The network to classify.</param>
-    /// <param name="defaultValue">The value to return when no block contains the network.</param>
-    /// <returns>The value of the most specific block that contains the network.</returns>
-    private static TValue FindMostSpecificBlock<TValue>((NetworkBits Block, TValue Value)[] table, NetworkBits network, TValue defaultValue)
+    /// <param name="undefinedValue">The value of a network that no block covers, or whose addresses don't share a value.</param>
+    /// <returns>The value of the network.</returns>
+    private static TValue Classify<TValue>((NetworkBits Block, TValue Value)[] registeredBlocks, (NetworkBits Block, TValue Value)[] unregisteredBlocks, NetworkBits network, TValue undefinedValue)
+        where TValue : struct, Enum
     {
-        // the table is ordered from the longest prefix to the shortest, so the first block found is the most specific one
-        foreach (var (block, value) in table)
-            if (block.IsSupernetOf(network))
-                return value;
+        var containingValue = undefinedValue;
+        var foundContainingBlock = false;
+        var hasInnerBlock = false;
 
-        return defaultValue;
+        // the tables are ordered from the longest prefix to the shortest, so the blocks that may lie inside the network come
+        // before the blocks that may contain it, and the first block found that contains it is the most specific one
+        foreach (var (block, value) in registeredBlocks)
+        {
+            if (block.PrefixLength > network.PrefixLength)
+            {
+                hasInnerBlock |= network.IsSupernetOf(block);
+            }
+            else if (block.IsSupernetOf(network))
+            {
+                // a registered block keeps its own value, whatever lies inside it
+                if (block.PrefixLength == network.PrefixLength)
+                    return value;
+
+                containingValue = value;
+                foundContainingBlock = true;
+                break;
+            }
+        }
+
+        foreach (var (block, value) in unregisteredBlocks)
+        {
+            if (block.PrefixLength > network.PrefixLength)
+            {
+                hasInnerBlock |= network.IsSupernetOf(block);
+            }
+            else if (!foundContainingBlock && block.IsSupernetOf(network))
+            {
+                containingValue = value;
+                foundContainingBlock = true;
+            }
+        }
+
+        // with no smaller block inside it, every address of the network has the value of the block that contains it
+        if (!hasInnerBlock)
+            return containingValue;
+
+        // the value of an address can only change where a block inside the network starts, or just after one ends, so the
+        // network has a single value when the addresses at those points all share the value of its first address
+        var firstAddressValue = ClassifyAddress(network.BaseAddressBits);
+        return InnerBlocksAgree(registeredBlocks) && InnerBlocksAgree(unregisteredBlocks) ? firstAddressValue : undefinedValue;
+
+        bool InnerBlocksAgree((NetworkBits Block, TValue Value)[] blocks)
+        {
+            foreach (var (block, _) in blocks)
+            {
+                if (block.PrefixLength <= network.PrefixLength || !network.IsSupernetOf(block))
+                    continue;
+
+                if (!EqualityComparer<TValue>.Default.Equals(ClassifyAddress(block.BaseAddressBits), firstAddressValue))
+                    return false;
+
+                if (block.LastAddressBits < network.LastAddressBits && !EqualityComparer<TValue>.Default.Equals(ClassifyAddress(block.LastAddressBits + 1), firstAddressValue))
+                    return false;
+            }
+
+            return true;
+        }
+
+        // a host network has no blocks inside it, so classifying one never comes back here
+        TValue ClassifyAddress(UInt128 addressBits)
+        {
+            return Classify(registeredBlocks, unregisteredBlocks, new NetworkBits(network.Version, addressBits, network.AddressBitLength), undefinedValue);
+        }
     }
 
     /// <summary>
@@ -112,46 +185,22 @@ public static partial class IPNetworkExtensions
         internal static readonly NetworkBits IPv4MappedBlock = ParseBlock("::ffff:0:0/96");
 
         /// <summary>
+        ///     The allocation of address space that no registered block covers: all of IPv4 is global unicast space, and so is
+        ///     the IPv6 global unicast block <c>2000::/3</c> (RFC 4291). The rest of IPv6 is not allocated.
+        /// </summary>
+        internal static readonly (NetworkBits Block, AddressAllocation Value)[] UnregisteredAllocations = CreateTable(
+        [
+            ("0.0.0.0/0", AddressAllocation.Global),
+            ("2000::/3", AddressAllocation.Global)
+        ]);
+
+        /// <summary>
         ///     The purpose of each registered block of address space, from the IANA IPv4 and IPv6 special-purpose address
-        ///     registries, as published in 2026.
+        ///     registries, as published in 2026. The address space that they leave uncovered is in
+        ///     <see cref="UnregisteredAllocations" />.
         /// </summary>
         internal static readonly (NetworkBits Block, AddressAllocation Value)[] Allocations = CreateTable(
         [
-            // the IPv4 globally routable unicast space is 0.0.0.0/0 less the multicast, reserved and private blocks. It is listed
-            // as the blocks that remain, so that a network that spans a private block is not reported as global. The special
-            // purpose blocks below are more specific, so they take precedence over these
-            ("0.0.0.0/5", AddressAllocation.Global),
-            ("8.0.0.0/7", AddressAllocation.Global),
-            ("11.0.0.0/8", AddressAllocation.Global),
-            ("12.0.0.0/6", AddressAllocation.Global),
-            ("16.0.0.0/4", AddressAllocation.Global),
-            ("32.0.0.0/3", AddressAllocation.Global),
-            ("64.0.0.0/2", AddressAllocation.Global),
-            ("128.0.0.0/3", AddressAllocation.Global),
-            ("160.0.0.0/5", AddressAllocation.Global),
-            ("168.0.0.0/6", AddressAllocation.Global),
-            ("172.0.0.0/12", AddressAllocation.Global),
-            ("172.32.0.0/11", AddressAllocation.Global),
-            ("172.64.0.0/10", AddressAllocation.Global),
-            ("172.128.0.0/9", AddressAllocation.Global),
-            ("173.0.0.0/8", AddressAllocation.Global),
-            ("174.0.0.0/7", AddressAllocation.Global),
-            ("176.0.0.0/4", AddressAllocation.Global),
-            ("192.0.0.0/9", AddressAllocation.Global),
-            ("192.128.0.0/11", AddressAllocation.Global),
-            ("192.160.0.0/13", AddressAllocation.Global),
-            ("192.169.0.0/16", AddressAllocation.Global),
-            ("192.170.0.0/15", AddressAllocation.Global),
-            ("192.172.0.0/14", AddressAllocation.Global),
-            ("192.176.0.0/12", AddressAllocation.Global),
-            ("192.192.0.0/10", AddressAllocation.Global),
-            ("193.0.0.0/8", AddressAllocation.Global),
-            ("194.0.0.0/7", AddressAllocation.Global),
-            ("196.0.0.0/6", AddressAllocation.Global),
-            ("200.0.0.0/5", AddressAllocation.Global),
-            ("208.0.0.0/4", AddressAllocation.Global),
-            ("2000::/3", AddressAllocation.Global),
-
             // globally reachable assignments inside blocks that are otherwise not
             ("192.0.0.9/32", AddressAllocation.Global),
             ("192.0.0.10/32", AddressAllocation.Global),

@@ -38,7 +38,7 @@ public static partial class IPNetworkExtensions
             var firstNetwork = ToHostNetworkBits(firstAddress, nameof(firstAddress));
             var secondNetwork = ToHostNetworkBits(secondAddress, nameof(secondAddress));
 
-            return GetContainingNetwork(firstNetwork, secondNetwork).ToIPNetwork();
+            return GetContainingNetwork(firstNetwork, secondNetwork, nameof(secondAddress)).ToIPNetwork();
         }
 
         /// <summary>

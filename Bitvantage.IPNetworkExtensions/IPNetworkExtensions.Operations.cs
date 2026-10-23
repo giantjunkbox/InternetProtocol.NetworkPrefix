@@ -325,7 +325,7 @@ public static partial class IPNetworkExtensions
         /// <exception cref="ArgumentException">Thrown when the networks are different IP versions.</exception>
         public static IPNetwork GetContainingNetwork(IPNetwork first, IPNetwork second)
         {
-            return GetContainingNetwork(NetworkBits.FromIPNetwork(first), NetworkBits.FromIPNetwork(second)).ToIPNetwork();
+            return GetContainingNetwork(NetworkBits.FromIPNetwork(first), NetworkBits.FromIPNetwork(second), nameof(second)).ToIPNetwork();
         }
 
         /// <summary>
@@ -345,7 +345,7 @@ public static partial class IPNetworkExtensions
             foreach (var network in networks)
             {
                 var networkBits = NetworkBits.FromIPNetwork(network);
-                containingNetwork = containingNetwork is null ? networkBits : GetContainingNetwork(containingNetwork.Value, networkBits);
+                containingNetwork = containingNetwork is null ? networkBits : GetContainingNetwork(containingNetwork.Value, networkBits, nameof(networks));
             }
 
             if (containingNetwork is null)
@@ -475,12 +475,13 @@ public static partial class IPNetworkExtensions
     /// </summary>
     /// <param name="first">The first network.</param>
     /// <param name="second">The second network.</param>
+    /// <param name="parameterName">The name of the caller's parameter to blame when the IP versions differ.</param>
     /// <returns>The smallest network that contains both networks.</returns>
     /// <exception cref="ArgumentException">Thrown when the networks are different IP versions.</exception>
-    private static NetworkBits GetContainingNetwork(NetworkBits first, NetworkBits second)
+    private static NetworkBits GetContainingNetwork(NetworkBits first, NetworkBits second, string parameterName)
     {
         if (first.Version != second.Version)
-            throw new ArgumentException($"Both networks must be the same IP version, but one is {first.Version} and the other is {second.Version}.", nameof(second));
+            throw new ArgumentException($"A containing network needs networks or addresses of the same IP version, but one is {first.Version} and another is {second.Version}.", parameterName);
 
         // XOR sets a one in every bit where the two base addresses differ, for example
         //   10.20.30.1  00001010.00010100.00011110.00000001

@@ -23,10 +23,16 @@ namespace Bitvantage.InternetProtocol;
 /// </summary>
 /// <remarks>
 ///     <para>
-///         The blocks come from the IANA IPv4 and IPv6 special-purpose address registries. A network takes the allocation of the
-///         most specific block that contains all of it, so a globally reachable block inside a reserved one, such as
-///         <c>192.0.0.9/32</c> inside <c>192.0.0.0/24</c>, is <see cref="Global" />. A network that spans blocks with different
-///         allocations, such as <c>0.0.0.0/1</c>, is <see cref="Undefined" />.
+///         The blocks come from the IANA IPv4 and IPv6 special-purpose address registries, and the address space they leave
+///         uncovered is <see cref="Global" />: the rest of IPv4, and the rest of the IPv6 global unicast block <c>2000::/3</c>.
+///         A network takes the allocation of the most specific block that contains all of it, so a globally reachable block
+///         inside a reserved one, such as <c>192.0.0.9/32</c> inside <c>192.0.0.0/24</c>, is <see cref="Global" />.
+///     </para>
+///     <para>
+///         A network that is itself a registered block keeps that block's allocation, so <c>192.0.0.0/24</c> is
+///         <see cref="ProtocolAssignments" />. Any other network that spans blocks with different allocations is
+///         <see cref="Undefined" />, such as <c>0.0.0.0/1</c>, or <c>126.0.0.0/7</c>, which includes the loopback block
+///         <c>127.0.0.0/8</c>. A network is therefore only <see cref="Global" /> when all of it is.
 ///     </para>
 ///     <para>
 ///         An IPv4-mapped IPv6 address or network, inside <c>::ffff:0:0/96</c>, takes the allocation of the IPv4 address or network
@@ -36,7 +42,8 @@ namespace Bitvantage.InternetProtocol;
 public enum AddressAllocation
 {
     /// <summary>
-    ///     No single allocation covers the whole prefix.
+    ///     No single allocation covers the whole network: it spans blocks with different allocations, or it is IPv6 address
+    ///     space outside every registered block and outside <c>2000::/3</c>, which is not yet allocated.
     /// </summary>
     Undefined = 0,
 
@@ -47,7 +54,8 @@ public enum AddressAllocation
     Private = 1,
 
     /// <summary>
-    ///     Globally routable unicast address space.
+    ///     Globally routable unicast address space: IPv4 outside the special-purpose blocks, and <c>2000::/3</c> outside them for
+    ///     IPv6, plus the globally reachable blocks that the registries list inside special-purpose blocks.
     /// </summary>
     Global = 2,
 

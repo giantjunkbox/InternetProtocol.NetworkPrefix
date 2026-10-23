@@ -123,4 +123,38 @@ public class ClassificationTests
         Assert.That(Network("0.0.0.0/0").Class, Is.EqualTo(NetworkClass.Undefined));
         Assert.That(Network("2001:db8::/32").Class, Is.EqualTo(NetworkClass.Undefined));
     }
+
+    [Test]
+    public void Allocation_Spans_01()
+    {
+        // a network is only global when all of it is; one that takes in a special-purpose block has no single allocation
+        Assert.That(Network("126.0.0.0/7").Allocation, Is.EqualTo(AddressAllocation.Undefined), "includes 127.0.0.0/8, loopback");
+        Assert.That(Network("64.0.0.0/2").Allocation, Is.EqualTo(AddressAllocation.Undefined), "includes 100.64.0.0/10 and others");
+        Assert.That(Network("192.0.0.0/9").Allocation, Is.EqualTo(AddressAllocation.Undefined), "includes 192.0.2.0/24, documentation");
+        Assert.That(Network("192.0.0.8/30").Allocation, Is.EqualTo(AddressAllocation.Undefined), "includes a dummy and two global addresses");
+        Assert.That(Network("2000::/3").Allocation, Is.EqualTo(AddressAllocation.Undefined), "includes 2001:db8::/32 and 2002::/16");
+        Assert.That(Network("2001:db8::/31").Allocation, Is.EqualTo(AddressAllocation.Undefined), "includes 2001:db8::/32, documentation");
+        Assert.That(Network("4000::/3").Allocation, Is.EqualTo(AddressAllocation.Undefined), "not allocated");
+
+        // global space with nothing special inside it is still global
+        Assert.That(Network("8.0.0.0/7").Allocation, Is.EqualTo(AddressAllocation.Global));
+        Assert.That(Network("2001:4860::/32").Allocation, Is.EqualTo(AddressAllocation.Global));
+    }
+
+    [Test]
+    public void Allocation_Spans_02()
+    {
+        // a registered block keeps its own allocation, even with blocks of other allocations inside it
+        Assert.That(Network("192.0.0.0/24").Allocation, Is.EqualTo(AddressAllocation.ProtocolAssignments));
+        Assert.That(Network("2001::/23").Allocation, Is.EqualTo(AddressAllocation.ProtocolAssignments));
+        Assert.That(Network("0.0.0.0/8").Allocation, Is.EqualTo(AddressAllocation.CurrentNetwork));
+        Assert.That(Network("240.0.0.0/4").Allocation, Is.EqualTo(AddressAllocation.Experimental));
+
+        // a network made up only of global blocks is global, even inside a block that is not
+        Assert.That(Network("2001:20::/27").Allocation, Is.EqualTo(AddressAllocation.Global), "2001:20::/28 and 2001:30::/28");
+
+        // part of a registered block that leaves out the blocks inside it takes the registered block's allocation
+        Assert.That(Network("192.0.0.0/29").Allocation, Is.EqualTo(AddressAllocation.ProtocolAssignments));
+        Assert.That(Network("::ffff:126.0.0.0/103").Allocation, Is.EqualTo(AddressAllocation.Undefined), "an IPv4-mapped 126.0.0.0/7");
+    }
 }
