@@ -165,6 +165,56 @@ public class OperationTests
     }
 
     [Test]
+    public void AvailableSubnets_IPv4_03()
+    {
+        // nothing is read until the result is enumerated, and each enumeration reads the allocations again, as LINQ methods do
+        var enumerationCount = 0;
+        IEnumerable<IPNetwork> CountedAllocations()
+        {
+            enumerationCount++;
+            yield return Network("10.0.0.0/24");
+        }
+
+        var availableSubnets = Network("10.0.0.0/22").AvailableSubnets(24, CountedAllocations());
+        Assert.That(enumerationCount, Is.Zero);
+
+        Assert.That(availableSubnets.First(), Is.EqualTo(Network("10.0.1.0/24")));
+        Assert.That(availableSubnets.Count(), Is.EqualTo(3));
+        Assert.That(enumerationCount, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void AvailableSubnets_IPv6_01()
+    {
+        // the first free /64 of a /32 with one allocation comes straight away, though 2^32 - 1 more /64s follow it
+        var plan = Network("2001:db8::/32");
+
+        Assert.That(plan.AvailableSubnets(64, Networks("2001:db8::/64")).First(), Is.EqualTo(Network("2001:db8:0:1::/64")));
+        Assert.That(plan.AvailableSubnets(64, Networks("2001:db8::/64")).Take(3), Is.EqualTo(Networks("2001:db8:0:1::/64", "2001:db8:0:2::/64", "2001:db8:0:3::/64")));
+    }
+
+    [Test]
+    public void GetHalves_IPv4_01()
+    {
+        var (lowerHalf, upperHalf) = Network("10.0.0.0/24").GetHalves();
+
+        Assert.That(lowerHalf, Is.EqualTo(Network("10.0.0.0/25")));
+        Assert.That(upperHalf, Is.EqualTo(Network("10.0.0.128/25")));
+        Assert.That(Network("10.0.0.0/24").GetHalves(), Is.EqualTo((Network("10.0.0.0/25"), Network("10.0.0.128/25"))));
+
+        // the halves are the same two networks that Split returns
+        Assert.That(new[] { lowerHalf, upperHalf }, Is.EqualTo(Network("10.0.0.0/24").Split()));
+        Assert.Throws<InvalidOperationException>(() => Network("10.0.0.1/32").GetHalves());
+    }
+
+    [Test]
+    public void GetHalves_IPv6_01()
+    {
+        Assert.That(Network("::/0").GetHalves(), Is.EqualTo((Network("::/1"), Network("8000::/1"))));
+        Assert.That(Network("2001:db8::/127").GetHalves(), Is.EqualTo((Network("2001:db8::/128"), Network("2001:db8::1/128"))));
+    }
+
+    [Test]
     public void GetAddress_IPv4_01()
     {
         var network = Network("10.0.0.0/24");

@@ -38,18 +38,28 @@ public class PropertyTests
     }.AsReadOnly();
 
     [Test]
-    public void ComplementaryNetwork_IPv4_01()
+    public void GetComplementaryNetwork_IPv4_01()
     {
-        Assert.That(Network("10.0.10.0/24").ComplementaryNetwork, Is.EqualTo(Network("10.0.11.0/24")));
-        Assert.That(Network("10.0.11.0/24").ComplementaryNetwork, Is.EqualTo(Network("10.0.10.0/24")));
-        Assert.That(Network("10.0.0.0/16").ComplementaryNetwork, Is.EqualTo(Network("10.1.0.0/16")));
-        Assert.That(Network("10.1.0.0/16").ComplementaryNetwork, Is.EqualTo(Network("10.0.0.0/16")));
+        Assert.That(Network("10.0.10.0/24").GetComplementaryNetwork(), Is.EqualTo(Network("10.0.11.0/24")));
+        Assert.That(Network("10.0.11.0/24").GetComplementaryNetwork(), Is.EqualTo(Network("10.0.10.0/24")));
+        Assert.That(Network("10.0.0.0/16").GetComplementaryNetwork(), Is.EqualTo(Network("10.1.0.0/16")));
+        Assert.That(Network("10.1.0.0/16").GetComplementaryNetwork(), Is.EqualTo(Network("10.0.0.0/16")));
     }
 
     [Test]
-    public void ComplementaryNetwork_IPv4_02()
+    public void GetComplementaryNetwork_IPv4_02()
     {
-        Assert.Throws<InvalidOperationException>(() => _ = Network("0.0.0.0/0").ComplementaryNetwork);
+        Assert.Throws<InvalidOperationException>(() => Network("0.0.0.0/0").GetComplementaryNetwork());
+    }
+
+    [Test]
+    public void Any_01()
+    {
+        // the names follow IPAddress.Any, which is IPv4, and IPAddress.IPv6Any
+        Assert.That(IPNetwork.Any, Is.EqualTo(Network("0.0.0.0/0")));
+        Assert.That(IPNetwork.IPv6Any, Is.EqualTo(Network("::/0")));
+        Assert.That(IPNetwork.Any.IsSupernetOf(Network("10.0.0.0/8")), Is.True);
+        Assert.That(IPNetwork.IPv6Any.IsSupernetOf(Network("10.0.0.0/8")), Is.False);
     }
 
     [Test]

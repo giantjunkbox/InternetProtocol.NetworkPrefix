@@ -17,6 +17,7 @@
 */
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
+using System.Text;
 
 namespace Bitvantage.InternetProtocol;
 
@@ -57,10 +58,24 @@ public static partial class IPAddressExtensions
         /// <exception cref="FormatException">Thrown when <paramref name="value" /> is not a valid address.</exception>
         public static IPAddress ParseStrict(ReadOnlySpan<char> value)
         {
-            if (StrictAddressParser.TryParse(value.Trim(), out var address, out _))
+            if (TryParseTrimmed(value, out var address))
                 return address;
 
             throw new FormatException($"'{value}' is not a valid IP address. An IPv4 address must be four decimal numbers separated by dots, without leading zeros, such as 10.0.0.1.");
+        }
+
+        /// <summary>
+        ///     Parses UTF-8 text of an IPv4 or IPv6 address. See <see cref="ParseStrict(string)" /> for the accepted forms.
+        /// </summary>
+        /// <param name="utf8Text">The UTF-8 text to parse.</param>
+        /// <returns>The parsed address.</returns>
+        /// <exception cref="FormatException">Thrown when <paramref name="utf8Text" /> is not a valid address.</exception>
+        public static IPAddress ParseStrict(ReadOnlySpan<byte> utf8Text)
+        {
+            if (IPAddress.TryParseStrict(utf8Text, out var address))
+                return address;
+
+            throw new FormatException($"'{Encoding.UTF8.GetString(utf8Text)}' is not a valid IP address. An IPv4 address must be four decimal numbers separated by dots, without leading zeros, such as 10.0.0.1.");
         }
 
         /// <summary>
@@ -88,7 +103,29 @@ public static partial class IPAddressExtensions
         /// <returns><see langword="true" /> when the text is a valid address; otherwise <see langword="false" />. This method never throws.</returns>
         public static bool TryParseStrict(ReadOnlySpan<char> value, [NotNullWhen(true)] out IPAddress? result)
         {
-            return StrictAddressParser.TryParse(value.Trim(), out result, out _);
+            return TryParseTrimmed(value, out result);
         }
+
+        /// <summary>
+        ///     Attempts to parse UTF-8 text of an IPv4 or IPv6 address. See <see cref="ParseStrict(string)" /> for the accepted forms.
+        /// </summary>
+        /// <param name="utf8Text">The UTF-8 text to parse.</param>
+        /// <param name="result">When this method returns <see langword="true" />, the parsed address.</param>
+        /// <returns><see langword="true" /> when the text is a valid address; otherwise <see langword="false" />. This method never throws.</returns>
+        public static bool TryParseStrict(ReadOnlySpan<byte> utf8Text, [NotNullWhen(true)] out IPAddress? result)
+        {
+            return Utf8Text.TryParse(utf8Text, TryParseTrimmed, out result);
+        }
+    }
+
+    /// <summary>
+    ///     Parses the text of an address, ignoring leading and trailing whitespace.
+    /// </summary>
+    /// <param name="value">The text to parse.</param>
+    /// <param name="address">When this method returns <see langword="true" />, the parsed address.</param>
+    /// <returns><see langword="true" /> when the text is a valid address.</returns>
+    private static bool TryParseTrimmed(ReadOnlySpan<char> value, [NotNullWhen(true)] out IPAddress? address)
+    {
+        return StrictAddressParser.TryParse(value.Trim(), out address, out _);
     }
 }

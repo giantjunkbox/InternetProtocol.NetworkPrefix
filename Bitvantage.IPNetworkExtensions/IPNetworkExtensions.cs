@@ -86,24 +86,6 @@ public static partial class IPNetworkExtensions
         public IPAddress BroadcastAddress => network.LastAddress;
 
         /// <summary>
-        ///     The other half of this network's supernet: the network of the same length whose base address differs only in its
-        ///     last network bit. For example, the complementary network of <c>10.1.2.0/25</c> is <c>10.1.2.128/25</c>, and the
-        ///     other way round.
-        /// </summary>
-        /// <exception cref="InvalidOperationException">Thrown when the prefix length is 0, since such a network spans every address.</exception>
-        public IPNetwork ComplementaryNetwork
-        {
-            get
-            {
-                var networkBits = NetworkBits.FromIPNetwork(network);
-                if (networkBits.PrefixLength == 0)
-                    throw new InvalidOperationException($"{network} spans every address of its version and has no complementary network.");
-
-                return networkBits.ComplementaryNetwork.ToIPNetwork();
-            }
-        }
-
-        /// <summary>
         ///     The first address in the network that can be assigned to a host.
         /// </summary>
         /// <remarks>
@@ -212,9 +194,15 @@ public static partial class IPNetworkExtensions
         ///     <c>LastHost</c>.
         /// </summary>
         /// <remarks>
-        ///     For IPv4 this excludes the network and broadcast addresses. For IPv6 it excludes only the subnet-router anycast
-        ///     address, since IPv6 has no broadcast address. A /31 or /127 point-to-point network and a host network have no
-        ///     excluded addresses.
+        ///     <para>
+        ///         For IPv4 this excludes the network and broadcast addresses. For IPv6 it excludes only the subnet-router anycast
+        ///         address, since IPv6 has no broadcast address. A /31 or /127 point-to-point network and a host network have no
+        ///         excluded addresses.
+        ///     </para>
+        ///     <para>
+        ///         Every host count fits in a <see cref="UInt128" />, which needs no allocation. A <see cref="UInt128" /> converts
+        ///         to <see cref="BigInteger" /> implicitly, so this combines with <c>TotalAddresses</c> without a cast.
+        ///     </para>
         /// </remarks>
         public UInt128 TotalHosts => NetworkBits.FromIPNetwork(network).TotalHosts;
 
@@ -300,6 +288,20 @@ public static partial class IPNetworkExtensions
             // the network with the longer prefix can lie within the other, so only one of these tests converts any addresses
             return IsWithin(network, other) || IsWithin(other, network);
         }
+    }
+
+    extension(IPNetwork)
+    {
+        /// <summary>
+        ///     The network that holds every IPv4 address, <c>0.0.0.0/0</c>, which access control lists call "any". The name follows
+        ///     <see cref="IPAddress.Any" />, which is also IPv4.
+        /// </summary>
+        public static IPNetwork Any => new(IPAddress.Any, 0);
+
+        /// <summary>
+        ///     The network that holds every IPv6 address, <c>::/0</c>. The name follows <see cref="IPAddress.IPv6Any" />.
+        /// </summary>
+        public static IPNetwork IPv6Any => new(IPAddress.IPv6Any, 0);
     }
 
     /// <summary>

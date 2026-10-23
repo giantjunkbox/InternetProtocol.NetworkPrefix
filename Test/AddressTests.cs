@@ -191,6 +191,17 @@ public class AddressTests
     }
 
     [Test]
+    public void ParseStrict_Utf8_01()
+    {
+        Assert.That(IPAddress.ParseStrict("10.0.0.1"u8), Is.EqualTo(Address("10.0.0.1")));
+        Assert.That(IPAddress.TryParseStrict(" 2001:db8::1 "u8, out var address) && address.Equals(Address("2001:db8::1")), Is.True);
+        Assert.That(IPAddress.TryParseStrict("010.0.0.1"u8, out var octalAddress), Is.False);
+        Assert.That(octalAddress, Is.Null);
+        Assert.That(IPAddress.TryParseStrict(new byte[] { 0x31, 0xff }, out _), Is.False);
+        Assert.Throws<FormatException>(() => IPAddress.ParseStrict("10.1"u8));
+    }
+
+    [Test]
     public void ReversePointer_01()
     {
         Assert.That(Address("1.2.3.4").ReversePointer, Is.EqualTo("4.3.2.1.in-addr.arpa"));

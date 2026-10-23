@@ -39,26 +39,26 @@ public class FormattingTests
     }
 
     [Test]
-    public void ReverseZone_IPv4_01()
+    public void GetReverseZone_IPv4_01()
     {
-        Assert.That(Network("10.0.0.0/24").ReverseZone, Is.EqualTo("0.0.10.in-addr.arpa"));
-        Assert.That(Network("10.0.0.0/8").ReverseZone, Is.EqualTo("10.in-addr.arpa"));
-        Assert.That(Network("0.0.0.0/0").ReverseZone, Is.EqualTo("in-addr.arpa"));
-        Assert.That(Network("10.1.2.3/32").ReverseZone, Is.EqualTo("3.2.1.10.in-addr.arpa"));
+        Assert.That(Network("10.0.0.0/24").GetReverseZone(), Is.EqualTo("0.0.10.in-addr.arpa"));
+        Assert.That(Network("10.0.0.0/8").GetReverseZone(), Is.EqualTo("10.in-addr.arpa"));
+        Assert.That(Network("0.0.0.0/0").GetReverseZone(), Is.EqualTo("in-addr.arpa"));
+        Assert.That(Network("10.1.2.3/32").GetReverseZone(), Is.EqualTo("3.2.1.10.in-addr.arpa"));
 
         // a network that does not end on a byte has no zone of its own
-        Assert.Throws<InvalidOperationException>(() => _ = Network("10.0.0.0/23").ReverseZone);
+        Assert.Throws<InvalidOperationException>(() => Network("10.0.0.0/23").GetReverseZone());
     }
 
     [Test]
-    public void ReverseZone_IPv6_01()
+    public void GetReverseZone_IPv6_01()
     {
-        Assert.That(Network("2001:db8::/32").ReverseZone, Is.EqualTo("8.b.d.0.1.0.0.2.ip6.arpa"));
-        Assert.That(Network("2001:db8:a::/52").ReverseZone, Is.EqualTo("0.a.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa"));
-        Assert.That(Network("::/0").ReverseZone, Is.EqualTo("ip6.arpa"));
+        Assert.That(Network("2001:db8::/32").GetReverseZone(), Is.EqualTo("8.b.d.0.1.0.0.2.ip6.arpa"));
+        Assert.That(Network("2001:db8:a::/52").GetReverseZone(), Is.EqualTo("0.a.0.0.0.8.b.d.0.1.0.0.2.ip6.arpa"));
+        Assert.That(Network("::/0").GetReverseZone(), Is.EqualTo("ip6.arpa"));
 
         // a network that does not end on a hexadecimal digit has no zone of its own
-        Assert.Throws<InvalidOperationException>(() => _ = Network("2001:db8::/30").ReverseZone);
+        Assert.Throws<InvalidOperationException>(() => Network("2001:db8::/30").GetReverseZone());
     }
 
     [Test]

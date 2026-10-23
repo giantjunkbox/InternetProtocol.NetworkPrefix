@@ -15,7 +15,6 @@
    You should have received a copy of the GNU Affero General Public License
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
-using System.Buffers;
 using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Net;
@@ -35,12 +34,6 @@ public static partial class IPNetworkExtensions
     ///     A description of the supported formats, for exception messages.
     /// </summary>
     private const string SupportedFormats = "The supported formats are an address and prefix length such as 10.0.0.0/24, an address and network mask such as 10.0.0.0 255.255.255.0 or 10.0.0.0/255.255.255.0, an address and wildcard mask such as 10.0.0.0 0.0.0.255, and a single address such as 10.0.0.1, which is a host network. An IPv4 address must be four decimal numbers separated by dots, without leading zeros.";
-
-    /// <summary>
-    ///     The longest UTF-8 text that is converted to characters on the stack rather than in a rented array. Every valid network
-    ///     is far shorter, but text may be padded with whitespace, so longer text is still parsed.
-    /// </summary>
-    private const int Utf8StackLimit = 256;
 
     extension(IPNetwork)
     {
@@ -345,24 +338,7 @@ public static partial class IPNetworkExtensions
     /// <returns><see langword="true" /> when the text is a valid network.</returns>
     internal static bool TryParseUtf8(ReadOnlySpan<byte> utf8Text, out NetworkBits network)
     {
-        // UTF-8 never needs more characters than it has bytes, so a buffer as long as the text always fits it. Short text,
-        // which is all valid text, converts on the stack
-        char[]? rentedCharacters = null;
-        var characters = utf8Text.Length <= Utf8StackLimit
-            ? stackalloc char[Utf8StackLimit]
-            : rentedCharacters = ArrayPool<char>.Shared.Rent(utf8Text.Length);
-
-        try
-        {
-            // invalid UTF-8 becomes replacement characters, which then fail to parse
-            var characterCount = Encoding.UTF8.GetChars(utf8Text, characters);
-            return TryParseCore(characters[..characterCount], out network);
-        }
-        finally
-        {
-            if (rentedCharacters is not null)
-                ArrayPool<char>.Shared.Return(rentedCharacters);
-        }
+        return Utf8Text.TryParse(utf8Text, TryParseCore, out network);
     }
 
     /// <summary>

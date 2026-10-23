@@ -83,7 +83,9 @@ var around = IPNetwork.GetContainingNetwork(IPAddress.Parse("10.0.0.1"), IPAddre
 ## Working with sets of networks
 ```csharp
 var subnets = network.Split(26);                                   // 10.0.0.0/26, 10.0.0.64/26, 10.0.0.128/26, 10.0.0.192/26
+var (lowerHalf, upperHalf) = network.GetHalves();                  // 10.0.0.0/25, 10.0.0.128/25
 var supernet = network.GetSupernet(16);                            // 10.0.0.0/16
+var everyIPv4Address = IPNetwork.Any;                              // 0.0.0.0/0, and IPNetwork.IPv6Any is ::/0
 var remaining = network.Exclude(IPNetwork.Parse("10.0.0.0/26"));   // 10.0.0.64/26, 10.0.0.128/25
 
 // the fewest networks that cover exactly the same addresses
@@ -104,7 +106,7 @@ var plan = IPNetwork.ParseStrict("10.0.0.0/22");
 var allocated = new[] { IPNetwork.Parse("10.0.0.0/24"), IPNetwork.Parse("10.0.1.128/25") };
 
 var free = plan.Exclude(allocated);                                       // 10.0.1.0/25, 10.0.2.0/23
-var firstFreeSlash24 = plan.AvailableSubnets(24, allocated).First();      // 10.0.2.0/24
+var firstFreeSlash24 = plan.AvailableSubnets(24, allocated).First();      // 10.0.2.0/24, found without working out the rest
 var difference = IPNetwork.Exclude([IPNetwork.Parse("10.0.0.0/23")], allocated); // 10.0.1.0/25, the set difference of two sets
 
 var gateway = network.GetAddress(1);                                      // 10.0.0.1
@@ -162,7 +164,7 @@ IPNetwork.Parse("10.0.0.0/8").IsSupernetOf(IPNetwork.FromAddress(client.Unmap())
 network.ToString(NetworkFormat.AddressAndMask);       // 10.0.0.0 255.255.255.0
 network.ToString(NetworkFormat.AddressAndHostMask);   // 10.0.0.0 0.0.0.255
 network.ToString(NetworkFormat.HostMask);             // 0.0.0.255
-network.ReverseZone;                                  // 0.0.10.in-addr.arpa
+network.GetReverseZone();                             // 0.0.10.in-addr.arpa
 IPAddress.Parse("10.0.0.7").ReversePointer;           // 7.0.0.10.in-addr.arpa
 network.ToString(NetworkFormat.Detail);
 ```
@@ -182,7 +184,8 @@ supernet and overlap tests cost about as much as the built-in `Contains` for an 
 `IPAddress`, such as `NetworkMask`, create a new address on every call. In a hot loop, use the integer members instead:
 `BaseAddressBits`, `NetworkMaskBits` and `HostMaskBits` on the network, and `AddressBits` on the address being tested.
 Set operations such as `Exclude` and `Summarize` run in time proportional to the number of networks; removing 100,000
-host addresses from a /8 takes under a second.
+host addresses from a /8 takes under a second. Methods whose results can be astronomically long, such as `Addresses`,
+`Hosts`, `Split` and `AvailableSubnets`, produce them only as they are enumerated, so taking the first few is cheap.
 
 ## Serialization
 System.Text.Json cannot serialize an `IPNetwork` on its own. Register `IPNetworkJsonConverter`, or apply it to a single

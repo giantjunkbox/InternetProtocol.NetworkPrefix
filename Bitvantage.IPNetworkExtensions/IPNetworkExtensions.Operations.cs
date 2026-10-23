@@ -43,9 +43,15 @@ public static partial class IPNetworkExtensions
         ///     network. For example, the first free /24 in an address plan is <c>plan.AvailableSubnets(24, allocated).First()</c>.
         /// </summary>
         /// <remarks>
-        ///     Allocated networks may overlap each other, lie partly or wholly outside this network, or be of the other IP version;
-        ///     only the addresses that they share with this network count as allocated. The free space is worked out when this
-        ///     method is called, and the subnets are produced as they are enumerated.
+        ///     <para>
+        ///         Allocated networks may overlap each other, lie partly or wholly outside this network, or be of the other IP
+        ///         version; only the addresses that they share with this network count as allocated.
+        ///     </para>
+        ///     <para>
+        ///         Nothing is worked out until the result is enumerated, and then only as far as it is enumerated. Taking the first
+        ///         free subnet costs a sort of the allocated networks and a walk down to the first gap, however much free space
+        ///         lies after it. Each enumeration reads <paramref name="allocatedNetworks" /> again, as LINQ methods do.
+        ///     </para>
         /// </remarks>
         /// <param name="prefixLength">
         ///     The prefix length of the subnets, from this network's prefix length to 32 for IPv4 or 128 for IPv6.
@@ -63,8 +69,7 @@ public static partial class IPNetworkExtensions
             if (prefixLength < networkBits.PrefixLength || prefixLength > networkBits.AddressBitLength)
                 throw new ArgumentOutOfRangeException(nameof(prefixLength), prefixLength, $"The prefix length of a subnet of {network} must be from {networkBits.PrefixLength} to {networkBits.AddressBitLength}.");
 
-            var freeBlocks = Subtract([networkBits], SummarizeBits(allocatedNetworks.Select(NetworkBits.FromIPNetwork)));
-            return EnumerateAvailableSubnets(freeBlocks, prefixLength);
+            return EnumerateAvailableSubnets(networkBits, allocatedNetworks, prefixLength);
         }
 
         /// <summary>
@@ -86,7 +91,7 @@ public static partial class IPNetworkExtensions
         /// <returns>The networks that remain, sorted.</returns>
         public IReadOnlyList<IPNetwork> Exclude(IPNetwork networkToExclude)
         {
-            return ToIPNetworks(Subtract([NetworkBits.FromIPNetwork(network)], [NetworkBits.FromIPNetwork(networkToExclude)]));
+            return ToIPNetworks(EnumerateDifference([NetworkBits.FromIPNetwork(network)], [NetworkBits.FromIPNetwork(networkToExclude)]));
         }
 
         /// <summary>
@@ -104,7 +109,7 @@ public static partial class IPNetworkExtensions
         {
             ArgumentNullException.ThrowIfNull(networksToExclude);
 
-            return ToIPNetworks(Subtract([NetworkBits.FromIPNetwork(network)], SummarizeBits(networksToExclude.Select(NetworkBits.FromIPNetwork))));
+            return ToIPNetworks(EnumerateDifference([NetworkBits.FromIPNetwork(network)], SummarizeBits(networksToExclude.Select(NetworkBits.FromIPNetwork))));
         }
 
         /// <summary>
@@ -150,6 +155,43 @@ public static partial class IPNetworkExtensions
                 throw new ArgumentException($"{address} is not in {network}.", nameof(address));
 
             return addressBits - networkBits.BaseAddressBits;
+        }
+
+        /// <summary>
+        ///     Returns the other half of this network's supernet: the network of the same length whose base address differs only in
+        ///     its last network bit. For example, the complementary network of <c>10.1.2.0/25</c> is <c>10.1.2.128/25</c>, and the
+        ///     other way round.
+        /// </summary>
+        /// <returns>The complementary network.</returns>
+        /// <exception cref="InvalidOperationException">Thrown when the prefix length is 0, since such a network spans every address.</exception>
+        public IPNetwork GetComplementaryNetwork()
+        {
+            var networkBits = NetworkBits.FromIPNetwork(network);
+            if (networkBits.PrefixLength == 0)
+                throw new InvalidOperationException($"{network} spans every address of its version and has no complementary network.");
+
+            return networkBits.ComplementaryNetwork.ToIPNetwork();
+        }
+
+        /// <summary>
+        ///     Returns the two halves of this network, the networks one bit longer, as a pair that can be deconstructed. For example,
+        ///     <c>var (lowerHalf, upperHalf) = network.GetHalves();</c> gives <c>10.0.0.0/25</c> and <c>10.0.0.128/25</c> for
+        ///     <c>10.0.0.0/24</c>.
+        /// </summary>
+        /// <remarks>
+        ///     <c>Split()</c> returns the same two networks as a sequence.
+        /// </remarks>
+        /// <returns>The lower and upper halves.</returns>
+        /// <exception cref="InvalidOperationException">Thrown when this is a host network, which has no halves.</exception>
+        public (IPNetwork Lower, IPNetwork Upper) GetHalves()
+        {
+            var networkBits = NetworkBits.FromIPNetwork(network);
+            if (networkBits.IsHostNetwork)
+                throw new InvalidOperationException($"{network} is a host network and has no halves.");
+
+            // the lower half keeps the base address, and the upper half is its complementary network
+            var lowerHalf = networkBits.WithPrefixLength(networkBits.PrefixLength + 1);
+            return (lowerHalf.ToIPNetwork(), lowerHalf.ComplementaryNetwork.ToIPNetwork());
         }
 
         /// <summary>
@@ -204,6 +246,9 @@ public static partial class IPNetworkExtensions
         ///     Splits this network into its two halves, the networks one bit longer. For example, <c>10.0.0.0/24</c> splits into
         ///     <c>10.0.0.0/25</c> and <c>10.0.0.128/25</c>.
         /// </summary>
+        /// <remarks>
+        ///     <c>GetHalves</c> returns the same two networks as a pair that can be deconstructed.
+        /// </remarks>
         /// <returns>The two halves, lower half first.</returns>
         /// <exception cref="InvalidOperationException">Thrown when this is a host network, which can't be split.</exception>
         public IEnumerable<IPNetwork> Split()
@@ -263,7 +308,7 @@ public static partial class IPNetworkExtensions
             var summarizedNetworks = SummarizeBits(networks.Select(NetworkBits.FromIPNetwork));
             var summarizedExclusions = SummarizeBits(networksToExclude.Select(NetworkBits.FromIPNetwork));
 
-            return ToIPNetworks(Subtract(summarizedNetworks, summarizedExclusions));
+            return ToIPNetworks(EnumerateDifference(summarizedNetworks, summarizedExclusions));
         }
 
         /// <summary>
@@ -373,14 +418,18 @@ public static partial class IPNetworkExtensions
     }
 
     /// <summary>
-    ///     Enumerates the free subnets of a given length in a set of free blocks.
+    ///     Enumerates the free subnets of a given length in a network, finding free space only as far as it is enumerated.
     /// </summary>
-    /// <param name="freeBlocks">The free blocks, sorted and free of overlaps.</param>
-    /// <param name="prefixLength">The prefix length of the subnets.</param>
-    /// <returns>Every subnet of the given length that fits in a free block, in ascending order.</returns>
-    private static IEnumerable<IPNetwork> EnumerateAvailableSubnets(List<NetworkBits> freeBlocks, int prefixLength)
+    /// <param name="network">The network to search, in integer form.</param>
+    /// <param name="allocatedNetworks">The networks that are already in use.</param>
+    /// <param name="prefixLength">The prefix length of the subnets, which the caller has validated.</param>
+    /// <returns>Every subnet of the given length that lies in free space, in ascending order.</returns>
+    private static IEnumerable<IPNetwork> EnumerateAvailableSubnets(NetworkBits network, IEnumerable<IPNetwork> allocatedNetworks, int prefixLength)
     {
-        foreach (var freeBlock in freeBlocks)
+        // the allocations must be sorted before the first gap can be known, so they are read in full when enumeration starts
+        var summarizedAllocations = SummarizeBits(allocatedNetworks.Select(NetworkBits.FromIPNetwork));
+
+        foreach (var freeBlock in EnumerateDifference([network], summarizedAllocations))
         {
             // a free block that is smaller than the subnets can't hold one
             if (freeBlock.PrefixLength > prefixLength)
@@ -466,18 +515,21 @@ public static partial class IPNetworkExtensions
     }
 
     /// <summary>
-    ///     Removes a set of networks from another set of networks.
+    ///     Enumerates the networks that remain when one set of networks is removed from another, working each out only when it is
+    ///     enumerated.
     /// </summary>
     /// <remarks>
-    ///     Both sets must be summarized: sorted, and free of overlaps. The result is summarized too: it is sorted, and no two of
-    ///     its networks are halves of the same supernet.
+    ///     Both sets must be summarized: sorted, and free of overlaps. The result is summarized too: it is sorted, and no two of its
+    ///     networks are halves of the same supernet.
     /// </remarks>
     /// <param name="networks">The summarized networks to remove addresses from.</param>
     /// <param name="exclusions">The summarized networks whose addresses are removed.</param>
-    /// <returns>The networks that remain.</returns>
-    private static List<NetworkBits> Subtract(List<NetworkBits> networks, List<NetworkBits> exclusions)
+    /// <returns>The networks that remain, in ascending order.</returns>
+    private static IEnumerable<NetworkBits> EnumerateDifference(List<NetworkBits> networks, List<NetworkBits> exclusions)
     {
-        var remainingNetworks = new List<NetworkBits>();
+        // the pieces of a network that are still to be examined, each with the run of exclusions that overlap it. A stack, rather
+        // than recursion, keeps the depth of the work independent of the iterator, so each result costs the same to produce
+        var pendingPieces = new Stack<(NetworkBits Network, int FirstExclusionIndex, int ExclusionCount)>();
 
         // both sets are sorted, so a single pass over the exclusions serves every network
         var firstCandidateIndex = 0;
@@ -494,47 +546,37 @@ public static partial class IPNetworkExtensions
             while (firstCandidateIndex + overlapCount < exclusions.Count && !IsWhollyBefore(network, exclusions[firstCandidateIndex + overlapCount]))
                 overlapCount++;
 
-            SubtractFrom(network, exclusions, firstCandidateIndex, overlapCount, remainingNetworks);
+            pendingPieces.Push((network, firstCandidateIndex, overlapCount));
+            while (pendingPieces.TryPop(out var piece))
+            {
+                // a piece that no exclusion overlaps remains whole
+                if (piece.ExclusionCount == 0)
+                {
+                    yield return piece.Network;
+                    continue;
+                }
+
+                // two networks that overlap are nested, so an overlapping exclusion either covers the whole piece, in which case
+                // nothing of it remains, or lies inside it. The exclusions do not overlap each other, so one that covers the piece
+                // is the only overlapping exclusion
+                if (exclusions[piece.FirstExclusionIndex].IsSupernetOf(piece.Network))
+                    continue;
+
+                // every exclusion lies inside the piece, so split the piece in half, and examine each half with the exclusions
+                // that it holds. The exclusions are sorted, so those in the lower half come first. A half that holds no exclusion
+                // remains whole, which keeps the result as few networks as possible
+                var lowerHalf = piece.Network.WithPrefixLength(piece.Network.PrefixLength + 1);
+                var upperHalf = lowerHalf.ComplementaryNetwork;
+
+                var lowerHalfExclusionCount = 0;
+                while (lowerHalfExclusionCount < piece.ExclusionCount && exclusions[piece.FirstExclusionIndex + lowerHalfExclusionCount].BaseAddressBits <= lowerHalf.LastAddressBits)
+                    lowerHalfExclusionCount++;
+
+                // the upper half goes on the stack first, so that the lower half comes off first and the result stays sorted
+                pendingPieces.Push((upperHalf, piece.FirstExclusionIndex + lowerHalfExclusionCount, piece.ExclusionCount - lowerHalfExclusionCount));
+                pendingPieces.Push((lowerHalf, piece.FirstExclusionIndex, lowerHalfExclusionCount));
+            }
         }
-
-        return remainingNetworks;
-    }
-
-    /// <summary>
-    ///     Removes the exclusions that overlap one network from it, and adds what remains to a list.
-    /// </summary>
-    /// <param name="network">The network to remove addresses from.</param>
-    /// <param name="exclusions">The summarized exclusions.</param>
-    /// <param name="firstExclusionIndex">The index of the first exclusion that overlaps the network.</param>
-    /// <param name="exclusionCount">The number of exclusions that overlap the network.</param>
-    /// <param name="remainingNetworks">The list to add the remaining networks to, in ascending order.</param>
-    private static void SubtractFrom(NetworkBits network, List<NetworkBits> exclusions, int firstExclusionIndex, int exclusionCount, List<NetworkBits> remainingNetworks)
-    {
-        // a network that no exclusion overlaps remains whole
-        if (exclusionCount == 0)
-        {
-            remainingNetworks.Add(network);
-            return;
-        }
-
-        // two networks that overlap are nested, so an overlapping exclusion either covers this whole network, in which case
-        // nothing remains, or lies inside it. The exclusions do not overlap each other, so one that covers the network is the
-        // only overlapping exclusion
-        if (exclusions[firstExclusionIndex].IsSupernetOf(network))
-            return;
-
-        // every exclusion lies inside the network, so split the network in half, and remove each exclusion from the half that
-        // holds it. The exclusions are sorted, so those in the lower half come first. A half that holds no exclusion remains
-        // whole, which keeps the result as few networks as possible
-        var lowerHalf = network.WithPrefixLength(network.PrefixLength + 1);
-        var upperHalf = lowerHalf.ComplementaryNetwork;
-
-        var lowerHalfExclusionCount = 0;
-        while (lowerHalfExclusionCount < exclusionCount && exclusions[firstExclusionIndex + lowerHalfExclusionCount].BaseAddressBits <= lowerHalf.LastAddressBits)
-            lowerHalfExclusionCount++;
-
-        SubtractFrom(lowerHalf, exclusions, firstExclusionIndex, lowerHalfExclusionCount, remainingNetworks);
-        SubtractFrom(upperHalf, exclusions, firstExclusionIndex + lowerHalfExclusionCount, exclusionCount - lowerHalfExclusionCount, remainingNetworks);
     }
 
     /// <summary>
@@ -583,12 +625,8 @@ public static partial class IPNetworkExtensions
     /// </summary>
     /// <param name="networks">The networks.</param>
     /// <returns>The networks, in the same order.</returns>
-    private static IPNetwork[] ToIPNetworks(List<NetworkBits> networks)
+    private static IPNetwork[] ToIPNetworks(IEnumerable<NetworkBits> networks)
     {
-        var ipNetworks = new IPNetwork[networks.Count];
-        for (var networkIndex = 0; networkIndex < networks.Count; networkIndex++)
-            ipNetworks[networkIndex] = networks[networkIndex].ToIPNetwork();
-
-        return ipNetworks;
+        return networks.Select(network => network.ToIPNetwork()).ToArray();
     }
 }

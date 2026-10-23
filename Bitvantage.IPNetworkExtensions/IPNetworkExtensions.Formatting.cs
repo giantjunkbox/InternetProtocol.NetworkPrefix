@@ -28,7 +28,7 @@ public static partial class IPNetworkExtensions
     extension(IPNetwork network)
     {
         /// <summary>
-        ///     The name of the reverse DNS zone that holds the pointer records for the network, such as
+        ///     Returns the name of the reverse DNS zone that holds the pointer records for the network, such as
         ///     <c>0.0.10.in-addr.arpa</c> for <c>10.0.0.0/24</c>, or <c>8.b.d.0.1.0.0.2.ip6.arpa</c> for <c>2001:db8::/32</c>.
         /// </summary>
         /// <remarks>
@@ -36,19 +36,17 @@ public static partial class IPNetworkExtensions
         ///     network has a zone of its own only when its prefix length is a multiple of 8 for IPv4, or of 4 for IPv6. For the
         ///     pointer name of a single address, use the <c>ReversePointer</c> property of the address.
         /// </remarks>
+        /// <returns>The zone name, without a trailing dot.</returns>
         /// <exception cref="InvalidOperationException">Thrown when the prefix length does not end on a label boundary.</exception>
-        public string ReverseZone
+        public string GetReverseZone()
         {
-            get
-            {
-                var networkBits = NetworkBits.FromIPNetwork(network);
-                var labelBitLength = GetReverseLabelBitLength(networkBits.Version);
+            var networkBits = NetworkBits.FromIPNetwork(network);
+            var labelBitLength = GetReverseLabelBitLength(networkBits.Version);
 
-                if (networkBits.PrefixLength % labelBitLength != 0)
-                    throw new InvalidOperationException($"{network} has no reverse DNS zone of its own, because a reverse zone needs a prefix length that is a multiple of {labelBitLength} for {networkBits.Version}. Split it into networks of the next multiple and use theirs.");
+            if (networkBits.PrefixLength % labelBitLength != 0)
+                throw new InvalidOperationException($"{network} has no reverse DNS zone of its own, because a reverse zone needs a prefix length that is a multiple of {labelBitLength} for {networkBits.Version}. Split it into networks of the next multiple and use theirs.");
 
-                return FormatReverseName(networkBits);
-            }
+            return FormatReverseName(networkBits);
         }
 
         /// <summary>

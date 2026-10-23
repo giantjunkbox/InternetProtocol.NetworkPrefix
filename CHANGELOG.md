@@ -36,7 +36,7 @@ notes.
   | `Mask`                                       | `NetworkMask`                                        |
   | `Wildcard`                                   | `HostMask`                                           |
   | `Broadcast`                                  | `BroadcastAddress`                                   |
-  | `ComplementaryPrefix`                        | `ComplementaryNetwork`                               |
+  | `ComplementaryPrefix`                        | `GetComplementaryNetwork()`                          |
   | `Contains(NetworkPrefix)`                    | `IsProperSupernetOf`                                 |
   | `ContainsOrEqual`                            | `IsSupernetOf`                                       |
   | `ContainedBy`                                | `IsProperSubnetOf`                                   |
@@ -77,7 +77,8 @@ notes.
   produces the network itself, where 2.0.0 threw, and `GetSupernet(int)` accepts its own prefix length the same way.
 - A mask that is not a network mask is read as a host mask, also called a wildcard mask, so `10.0.0.0 0.0.0.255`
   parses as `10.0.0.0/24`. The all-zero and all-one masks remain network masks.
-- `ComplementaryNetwork` throws `InvalidOperationException` for a /0, rather than `ArgumentException`.
+- The complementary network is a method, `GetComplementaryNetwork()`, rather than a property, because it throws for a
+  /0, and it throws `InvalidOperationException` rather than `ArgumentException`.
 - `FirstHost` and `LastHost` work for a /0, rather than throwing.
 - For IPv6, which has no broadcast address, `LastHost`, `Hosts()` and `TotalHosts` include the last address, and only
   the subnet-router anycast address, which is the network address, is left out. A /64 has 2^64 - 1 hosts rather than
@@ -98,14 +99,19 @@ notes.
   `IPNetwork.ParseRange` and `TryParseRange` read text such as `10.0.0.1-10.0.0.9`. `GetContainingNetwork` takes two
   addresses as well as two networks.
 - Address planning: `Exclude` takes a set of networks to remove, the static `IPNetwork.Exclude` computes the set
-  difference of two sets, and `AvailableSubnets` lists the free subnets of a given length. `GetAddress` and `GetOffset`
+  difference of two sets, and `AvailableSubnets` lists the free subnets of a given length, working out free space only
+  as far as the result is enumerated. `GetAddress` and `GetOffset`
   convert between an address and its offset in a network.
 - `IPNetwork.FromHostMask`, `IPNetwork.GetNetworkMask` and `IPNetwork.GetHostMask`.
 - `NetworkFormat.AddressAndHostMask`, the address and wildcard form used by Cisco access control lists, and
   `NetworkFormat.HostMask`.
-- `ReverseZone`, the reverse DNS zone of a network.
-- `ParseStrict` and `TryParseStrict` overloads for UTF-8 text, which `IPNetworkJsonConverter` uses to read values
-  without creating a string.
+- `GetReverseZone()`, the reverse DNS zone of a network.
+- `GetHalves()`, which returns the two halves of a network as a pair that can be deconstructed, as in
+  `var (lowerHalf, upperHalf) = network.GetHalves();`.
+- `IPNetwork.Any` and `IPNetwork.IPv6Any`, the networks `0.0.0.0/0` and `::/0`, named after `IPAddress.Any` and
+  `IPAddress.IPv6Any`.
+- `ParseStrict` and `TryParseStrict` overloads for UTF-8 text, for both networks and addresses.
+  `IPNetworkJsonConverter` uses them to read values without creating a string.
 - Extension members on `IPAddress`, in `IPAddressExtensions`: `ParseStrict` and `TryParseStrict` with the same IPv4
   rules as for networks; `CompareTo`, `IPAddress.Comparer`, and the `<`, `>`, `<=`, `>=`, `+` and `-` operators;
   `AddressBits` and `IPAddress.FromAddressBits`, the same integer form that networks use; `Allocation`, `Class` and
