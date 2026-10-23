@@ -12,7 +12,7 @@
 		<PackageProjectUrl>https://github.com/Bitvantage/InternetProtocol.NetworkPrefix</PackageProjectUrl>
 		<PackageIcon>icon.png</PackageIcon>
 		<RepositoryType>git</RepositoryType>
-		<PackageTags>ipnetwork;cidr;subnet;subnetting;supernet;supernetting;netmask;subnet-mask;wildcard-mask;subnet-calculator;cidr-calculator;ip-range;range-to-cidr;ipam;ip-address;ipaddress;reverse-dns;ipv4;ipv6;network;networking;extension-members</PackageTags>
+		<PackageTags>ipnetwork;cidr;subnet;subnetting;supernet;supernetting;netmask;subnet-mask;wildcard-mask;subnet-calculator;cidr-calculator;ip-range;range-to-cidr;ipam;ip-address;ipaddress;reverse-dns;ipv4;ipv6;network;networking;extension-members;aot;native-aot;trimming;sourcelink</PackageTags>
 		<VersionPrefix>3.0.0</VersionPrefix>
 		<FileVersion>3.0.0</FileVersion>
 		<AssemblyVersion>3.0.0</AssemblyVersion>

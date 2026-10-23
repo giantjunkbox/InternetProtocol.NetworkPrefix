@@ -7,8 +7,9 @@ address planning, sorting, classification, strict parsing, reverse DNS names and
 `IPAddress` with sorting, arithmetic, classification and strict parsing. The members appear on `IPNetwork` and
 `IPAddress` themselves, so there is no separate type to convert to and from.
 
-Requires .NET 10 or later. This package replaces `Bitvantage.InternetProtocol.NetworkPrefix`; see the changelog for the
-migration from its `NetworkPrefix` class.
+Requires .NET 10 or later. The library is compatible with trimming and native AOT, and its package includes Source Link
+and a symbol package, so a debugger can step into the exact source of the release. This package replaces
+`Bitvantage.InternetProtocol.NetworkPrefix`; see the changelog for the migration from its `NetworkPrefix` class.
 
 ## Installing via NuGet Package Manager
 ```sh
